@@ -376,3 +376,8 @@ dotnet_naming_style.s_camelcase.required_suffix =
 dotnet_naming_style.s_camelcase.word_separator = 
 dotnet_naming_style.s_camelcase.capitalization = camel_case
 
+
+#### Test projects ####
+[backend/tests/**/*.cs]
+# Underscored, sentence-style test names are intentional in test projects.
+dotnet_diagnostic.CA1707.severity = none
