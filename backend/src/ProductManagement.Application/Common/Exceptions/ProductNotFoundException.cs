@@ -1,6 +1,5 @@
 using System.Net;
 
-
 namespace ProductManagement.Application.Common.Exceptions;
 
 public class ProductNotFoundException(object key)

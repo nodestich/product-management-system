@@ -11,6 +11,8 @@ public class Product : BaseEntity
 
     public const int MinNameLength = 2;
     public const int MaxNameLength = 100;
+    public const int MaxStock = 1000; // Assumption
+
 
     // Keep for EF core materialisation
     private Product()
@@ -57,22 +59,16 @@ public class Product : BaseEntity
 
         n = n.Trim(); // ran after the whitespace check
 
-        if (n.Length is < MinNameLength or > MaxNameLength)
-        {
-            throw new DomainException($"Product name must be between {MinNameLength} and {MaxNameLength} characters.");
-        }
-
-        return n;
+        return n.Length is < MinNameLength or > MaxNameLength
+            ? throw new DomainException($"Product name must be between {MinNameLength} and {MaxNameLength} characters.")
+            : n;
     }
 
     private static decimal ValidatePrice(decimal p)
     {
-        if (p < 0)
-        {
-            throw new DomainException("Product price cannot be negative.");
-        }
-
-        return p;
+        return p < 0
+            ? throw new DomainException("Product price cannot be negative.")
+            : p;
     }
 
     private static int ValidateStock(int s)
@@ -80,6 +76,10 @@ public class Product : BaseEntity
         if (s < 0)
         {
             throw new DomainException("Product stock cannot be negative.");
+        }
+        else if (s > MaxStock)
+        {
+            throw new DomainException("Product exceeds maximum stock.");
         }
 
         return s;

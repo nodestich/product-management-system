@@ -12,10 +12,10 @@ public static class ProductMapper
             product.Name,
             product.Price,
             product.Stock,
-             product.CreatedAt,
+            product.CreatedAt,
             product.UpdatedAt);
 
-    public static IEnumerable<ProductDto> MapToDtos(this IEnumerable<Product> products)
+    public static IReadOnlyList<ProductDto> MapToDtos(this IEnumerable<Product> products)
     {
         return [.. products.Select(t => t.MapToDto())];
     }
