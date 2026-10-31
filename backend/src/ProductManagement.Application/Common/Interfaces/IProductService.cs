@@ -8,7 +8,7 @@ public interface IProductService
     Task<ProductDto> GetByIdAsync(int id, CancellationToken ct = default);
     Task<ProductDto> CreateAsync(CreateProductRequest request, CancellationToken ct = default);
     Task<ProductDto> UpdateAsync(int id, UpdateProductRequest request, CancellationToken ct = default);
-    Task<bool> DeleteAsync(int id, CancellationToken ct = default);
+    Task DeleteAsync(int id, CancellationToken ct = default);
     Task<ProductDto> DecrementStockAsync(int id, uint quantity, CancellationToken ct = default);
     Task<ProductDto> IncrementStockAsync(int id, uint quantity, CancellationToken ct = default);
     Task<IReadOnlyList<ProductDto>> SearchAsync(string name, CancellationToken ct = default);

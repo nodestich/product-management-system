@@ -101,15 +101,20 @@ public class ProductService(IApplicationDbContext context, ILogger<ProductServic
 
     }
 
-    public async Task<bool> DeleteAsync(int id, CancellationToken ct = default)
+    public async Task DeleteAsync(int id, CancellationToken ct = default)
     {
         var affectedRows = await context.Products
             .Where(p => p.Id == id)
             .ExecuteDeleteAsync(ct);
 
-        if (affectedRows > 0) ProductServiceLogs.ProductDeleted(logger, id);
-
-        return affectedRows > 0;
+        if (affectedRows > 0)
+        {
+            ProductServiceLogs.ProductDeleted(logger, id);
+        }
+        else
+        {
+            throw new ProductNotFoundException(id);
+        }
     }
 
     public async Task<IReadOnlyList<ProductDto>> GetAllAsync(CancellationToken ct = default)
