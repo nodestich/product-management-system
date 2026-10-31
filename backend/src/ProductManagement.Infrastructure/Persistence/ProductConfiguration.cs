@@ -21,7 +21,6 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
 
         // Delegate the responsability of generating the Id to the database,
         // but we can still set a range for it.
-        // Atomic operation to avoid race conditions in a multiple instance scenario.
         builder.Property(p => p.Id)
             .UseIdentityByDefaultColumn()
             .HasIdentityOptions(startValue: 100_000L, maxValue: 999_999L);

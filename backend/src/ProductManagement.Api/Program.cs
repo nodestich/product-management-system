@@ -17,10 +17,13 @@ builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
 
-var connectionString = builder.Configuration.GetConnectionString("Default")
-    ?? throw new InvalidOperationException("Connection string 'Default' is not configured.");
+builder.Services.AddDbContext<AppDbContext>((sp, options) =>
+{
+    var connectionString = sp.GetRequiredService<IConfiguration>().GetConnectionString("Default")
+        ?? throw new InvalidOperationException("Connection string 'Default' is not configured.");
 
-builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
+    options.UseNpgsql(connectionString);
+});
 
 builder.Services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<AppDbContext>());
 builder.Services.AddScoped<IProductService, ProductService>();

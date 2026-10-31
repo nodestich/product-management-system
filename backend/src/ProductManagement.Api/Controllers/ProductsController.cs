@@ -6,7 +6,7 @@ using ProductManagement.Application.Common.Interfaces;
 namespace ProductManagement.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/products")]
 [Produces("application/json")]
 public class ProductsController(IProductService productService) : ControllerBase
 {
