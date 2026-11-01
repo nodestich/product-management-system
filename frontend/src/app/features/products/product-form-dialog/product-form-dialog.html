@@ -1,0 +1,37 @@
+<h2 mat-dialog-title>{{ isEditMode ? 'Edit product' : 'New product' }}</h2>
+
+<form [formGroup]="form" (ngSubmit)="submit()">
+  <mat-dialog-content class="form-grid">
+    <mat-form-field appearance="outline">
+      <mat-label>Name</mat-label>
+      <input matInput formControlName="name" />
+      @if (form.controls.name.touched && form.controls.name.hasError('required')) {
+        <mat-error>Name is required</mat-error>
+      }
+      @if (form.controls.name.hasError('minlength')) {
+        <mat-error>At least 2 characters</mat-error>
+      }
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Price</mat-label>
+      <input matInput type="number" step="0.01" formControlName="price" />
+      @if (form.controls.price.hasError('min')) {
+        <mat-error>Price cannot be negative</mat-error>
+      }
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Stock</mat-label>
+      <input matInput type="number" formControlName="stock" />
+      @if (isEditMode) {
+        <mat-hint>Use the +/- buttons in the list to change stock</mat-hint>
+      }
+    </mat-form-field>
+  </mat-dialog-content>
+
+  <mat-dialog-actions align="end">
+    <button mat-button type="button" (click)="cancel()">Cancel</button>
+    <button mat-flat-button type="submit" [disabled]="isSaving || form.invalid">Save</button>
+  </mat-dialog-actions>
+</form>
