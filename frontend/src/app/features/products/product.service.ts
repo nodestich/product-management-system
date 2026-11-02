@@ -1,12 +1,11 @@
 import { inject, Injectable } from "@angular/core";
-import { API_BASE_URL } from "../../core/api-config";
 import { HttpClient } from "@angular/common/http";
 import { CreateProductRequest, Product, UpdateProductRequest } from "./product.models";
 import { Observable } from "rxjs";
 
 @Injectable({ providedIn: 'root' })
 export class ProductService {
-    private readonly base = `${inject(API_BASE_URL)}/api/products`;
+    private readonly base = '/api/products';
     private readonly http = inject(HttpClient);
 
     getAll(): Observable<Product[]> {

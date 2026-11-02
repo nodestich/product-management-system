@@ -30,18 +30,15 @@ builder.Services.AddScoped<IProductService, ProductService>();
 
 builder.Services.AddHealthChecks().AddDbContextCheck<AppDbContext>("database");
 
-// CORS
-const string FrontendCors = "frontend";
-builder.Services.AddCors(opt =>
-    opt.AddPolicy(FrontendCors, policy =>
-    {
-        policy.WithOrigins("http://localhost:4200")
-            .AllowAnyHeader()
-            .AllowAnyMethod();
-    }
-));
-
 var app = builder.Build();
+
+// One-shot schema migration mode used by the compose "migrate" service.
+if (args.Contains("--migrate"))
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();
+    return;
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -57,7 +54,6 @@ if (app.Environment.IsDevelopment())
 
 app.UseExceptionHandler();
 
-app.UseCors(FrontendCors);
 app.UseAuthorization();
 app.MapControllers();
 app.MapHealthChecks("/health");
