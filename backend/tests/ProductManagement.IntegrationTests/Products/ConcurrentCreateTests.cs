@@ -16,7 +16,7 @@ public sealed class ConcurrentCreateTests(ApiFactory factory) : IAsyncLifetime
     public async Task ConcurrentCreates_ProduceUniqueSixDigitIds()
     {
         const int parallelism = 25;
-        var client = factory.CreateClient();
+        using var client = await factory.CreateAuthenticatedClientAsync();
 
         var requests = Enumerable.Range(0, parallelism)
             .Select(i => client.PostAsJsonAsync("/api/products", new CreateProductRequest($"P{i}", 1m, 1)))

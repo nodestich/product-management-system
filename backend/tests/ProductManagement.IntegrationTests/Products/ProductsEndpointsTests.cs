@@ -12,6 +12,7 @@ public sealed class ProductEndpointsTests : IAsyncLifetime
 {
     private readonly ApiFactory _factory;
     private readonly HttpClient _client;
+    private HttpClient _authClient = null!;
 
     public ProductEndpointsTests(ApiFactory factory)
     {
@@ -19,16 +20,20 @@ public sealed class ProductEndpointsTests : IAsyncLifetime
         _client = factory.CreateClient();
     }
 
-    public Task InitializeAsync()
+    public async Task InitializeAsync()
     {
         // Runs before each test, otherwise state would leak
-        return _factory.ResetDatabaseAsync();
+        await _factory.ResetDatabaseAsync();
+
+        // Writes require authentication; reads stay anonymous.
+        _authClient = await _factory.CreateAuthenticatedClientAsync();
     }
 
     public Task DisposeAsync()
     {
         // Runs after each test
         _client.Dispose();
+        _authClient.Dispose();
         return Task.CompletedTask;
     }
 
@@ -36,7 +41,7 @@ public sealed class ProductEndpointsTests : IAsyncLifetime
 
     private async Task<ProductDto> CreateAsync(string name = "Monitor", int stock = 10)
     {
-        var response = await _client.PostAsJsonAsync("/api/products", new CreateProductRequest(name, 99.99m, stock));
+        var response = await _authClient.PostAsJsonAsync("/api/products", new CreateProductRequest(name, 99.99m, stock));
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<ProductDto>())!;
     }
@@ -47,7 +52,7 @@ public sealed class ProductEndpointsTests : IAsyncLifetime
     [InlineData("Valid", 1.0, -1)]
     public async Task Create_WithInvalidValues_Returns400(string name, double price, int stock)
     {
-        var response = await _client.PostAsJsonAsync("/api/products",
+        var response = await _authClient.PostAsJsonAsync("/api/products",
             new CreateProductRequest(name, (decimal)price, stock));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -63,7 +68,7 @@ public sealed class ProductEndpointsTests : IAsyncLifetime
     [Fact]
     public async Task Create_Valid_Returns201SixDigitIdAndLocation()
     {
-        var response = await _client.PostAsJsonAsync("/api/products", Valid());
+        var response = await _authClient.PostAsJsonAsync("/api/products", Valid());
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
 
@@ -94,7 +99,7 @@ public sealed class ProductEndpointsTests : IAsyncLifetime
     {
         var created = await CreateAsync(stock: 7);
 
-        var response = await _client.PutAsJsonAsync($"/api/products/{created.Id}",
+        var response = await _authClient.PutAsJsonAsync($"/api/products/{created.Id}",
             new UpdateProductRequest("Renamed", 5.55m));
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -111,8 +116,8 @@ public sealed class ProductEndpointsTests : IAsyncLifetime
     {
         var created = await CreateAsync();
 
-        var first = await _client.DeleteAsync($"/api/products/{created.Id}");
-        var second = await _client.DeleteAsync($"/api/products/{created.Id}");
+        var first = await _authClient.DeleteAsync($"/api/products/{created.Id}");
+        var second = await _authClient.DeleteAsync($"/api/products/{created.Id}");
 
         Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, second.StatusCode);
@@ -123,7 +128,7 @@ public sealed class ProductEndpointsTests : IAsyncLifetime
     {
         var created = await CreateAsync(stock: 10);
 
-        var response = await _client.PostAsync($"/api/products/{created.Id}/decrement-stock/4", null);
+        var response = await _authClient.PostAsync($"/api/products/{created.Id}/decrement-stock/4", null);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var dto = (await response.Content.ReadFromJsonAsync<ProductDto>())!;
@@ -134,7 +139,7 @@ public sealed class ProductEndpointsTests : IAsyncLifetime
     public async Task DecrementStock_Insufficient_Returns409()
     {
         var created = await CreateAsync(stock: 3);
-        var response = await _client.PostAsync($"/api/products/{created.Id}/decrement-stock/4", null);
+        var response = await _authClient.PostAsync($"/api/products/{created.Id}/decrement-stock/4", null);
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
     }
 
@@ -142,14 +147,14 @@ public sealed class ProductEndpointsTests : IAsyncLifetime
     public async Task DecrementStock_Zero_Returns400()
     {
         var created = await CreateAsync(stock: 3);
-        var response = await _client.PostAsync($"/api/products/{created.Id}/decrement-stock/0", null);
+        var response = await _authClient.PostAsync($"/api/products/{created.Id}/decrement-stock/0", null);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task DecrementStock_MissingProduct_Returns404()
     {
-        var response = await _client.PostAsync("/api/products/999/decrement-stock/1", null);
+        var response = await _authClient.PostAsync("/api/products/999/decrement-stock/1", null);
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
@@ -157,7 +162,7 @@ public sealed class ProductEndpointsTests : IAsyncLifetime
     public async Task AddToStock_IncreasesStock()
     {
         var created = await CreateAsync(stock: 5);
-        var response = await _client.PostAsync($"/api/products/{created.Id}/add-to-stock/3", null);
+        var response = await _authClient.PostAsync($"/api/products/{created.Id}/add-to-stock/3", null);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var dto = (await response.Content.ReadFromJsonAsync<ProductDto>())!;

@@ -77,6 +77,22 @@ The API listens on <http://localhost:5218> and the UI on <http://localhost:4200>
 
 Stock changes return the updated product. Errors use RFC 7807 `ProblemDetails` with a `traceId` that matches the API log.
 
+## Authentication
+
+Writes require a signed-in user; the four `GET` endpoints stay anonymous.
+
+| Endpoint | |
+| --- | --- |
+| `POST /api/auth/login` | `{ "email": "...", "password": "..." }`, sets the auth cookie |
+| `POST /api/auth/logout` | clears the cookie |
+| `GET /api/auth/me` | returns the current user |
+
+Seeded demo user: `admin@example.com` / `Admin123!`. In Scalar, run the login request once and the following requests reuse the cookie.
+
+Authentication is ASP.NET Core Identity with a cookie, no JWT. The cookie is `HttpOnly` and `SameSite=Strict`, so the browser sends it automatically, JavaScript cannot read it, and the frontend stores no token. `SameSite=Strict` is also the CSRF mitigation: the cookie is never attached to a cross-site request, and the app is served from a single origin.
+
+The persistence side derives from `IdentityUserContext<ApplicationUser, Guid>` instead of `IdentityDbContext`. There are no roles in this application, so the role tables would sit unused; this keeps the migration to users, claims, logins and tokens only.
+
 ## Product model
 
 | Field | Type | Rules |
@@ -106,7 +122,7 @@ cd backend
 dotnet test
 ```
 
-35 tests: 16 unit tests for the domain entity and 19 integration tests that run the API against a `postgres:16-alpine` container started by Testcontainers.
+41 tests: 16 unit tests for the domain entity and 25 integration tests that run the API against a `postgres:16-alpine` container started by Testcontainers. The integration tests log in as the seeded demo user before attempting writes.
 
 They cover all nine endpoints, the 400/404/409 paths, and a concurrency test that fires 25 parallel creates and asserts the IDs are the contiguous range 100000-100024.
 

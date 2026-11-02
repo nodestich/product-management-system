@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 using ProductManagement.Application.Common.DTOs.Product;
@@ -25,6 +26,7 @@ public class ProductsController(IProductService productService) : ControllerBase
         return Ok(await productService.GetByIdAsync(id, ct));
     }
 
+    [Authorize]
     [HttpPost]
     [ProducesResponseType<ProductDto>(StatusCodes.Status201Created)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -34,6 +36,7 @@ public class ProductsController(IProductService productService) : ControllerBase
         return CreatedAtAction(nameof(GetById), new { id = newProduct.Id }, newProduct);
     }
 
+    [Authorize]
     [HttpPut("{id:int}")]
     [ProducesResponseType<ProductDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -43,6 +46,7 @@ public class ProductsController(IProductService productService) : ControllerBase
         return Ok(await productService.UpdateAsync(id, request, ct));
     }
 
+    [Authorize]
     [HttpDelete("{id:int}")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
@@ -52,6 +56,7 @@ public class ProductsController(IProductService productService) : ControllerBase
         return NoContent();
     }
 
+    [Authorize]
     [HttpPost("{id:int}/decrement-stock/{quantity:int}")]
     [ProducesResponseType<ProductDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -62,6 +67,7 @@ public class ProductsController(IProductService productService) : ControllerBase
         return Ok(await productService.DecrementStockAsync(id, quantity, ct));
     }
 
+    [Authorize]
     [HttpPost("{id:int}/add-to-stock/{quantity:int}")]
     [ProducesResponseType<ProductDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -76,8 +82,8 @@ public class ProductsController(IProductService productService) : ControllerBase
     [ProducesResponseType<IReadOnlyList<ProductDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<IReadOnlyList<ProductDto>>> Search(
-        [FromQuery] string? name,
-        CancellationToken ct)
+            [FromQuery] string? name,
+            CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
