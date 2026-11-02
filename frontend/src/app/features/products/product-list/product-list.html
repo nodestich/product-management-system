@@ -4,6 +4,12 @@
     <button mat-flat-button (click)="createProduct()">
         <mat-icon>add</mat-icon> New product
     </button>
+    @if (user(); as current) {
+    <span class="user">{{ current.email }}</span>
+    <button mat-button (click)="signOut()">
+        <mat-icon>logout</mat-icon> Sign out
+    </button>
+    }
 </mat-toolbar>
 
 <div class="filters">

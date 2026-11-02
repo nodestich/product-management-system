@@ -1,4 +1,4 @@
-import { Component, OnInit, computed, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ProductService } from '../product.service';
 import { Product } from '../product.models';
 import { MatDialog } from '@angular/material/dialog';
@@ -14,6 +14,8 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
 import { ConfirmDialog } from '../../shared/confirm-dialog/confirm-dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { AuthService } from '../../../../core/auth/auth-service';
+import { Router } from '@angular/router';
 
 @Component({
   imports: [
@@ -41,17 +43,27 @@ export class ProductList implements OnInit {
   readonly isStockRangeActive = computed(() => this.minStock() !== null && this.maxStock() !== null);
   readonly isPartialStockRange = computed(() => (this.minStock() !== null) !== (this.maxStock() !== null));
 
+  private readonly authService = inject(AuthService);
+
+  // A signal, so the toolbar reacts to sign-in and sign-out.
+  readonly user = this.authService.currentUser;
+
   constructor(
     private readonly productService: ProductService,
     private readonly dialog: MatDialog,
-    private readonly snackBar: MatSnackBar
+    private readonly snackBar: MatSnackBar,
+    private readonly router: Router,
   ) {
-
   }
-
 
   ngOnInit(): void {
     this.loadProducts();
+  }
+
+  signOut(): void {
+    this.authService.logout().subscribe(() => {
+      this.router.navigate(['/login']);
+    });
   }
 
   loadProducts() {
