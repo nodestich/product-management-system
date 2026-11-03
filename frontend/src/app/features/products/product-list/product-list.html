@@ -16,7 +16,7 @@
     <mat-form-field appearance="outline">
         <mat-label>Search by name</mat-label>
         <input matInput [value]="searchTerm()" (input)="onSearchInput($any($event.target).value)"
-            [disabled]="isStockRangeActive()" />
+            (keyup.enter)="applyFilters()" [disabled]="isStockRangeActive()" />
         @if (isStockRangeActive()) {
         <mat-hint>Clear filters to search by name</mat-hint>
         }
@@ -39,7 +39,7 @@
             (input)="maxStock.set($any($event.target).valueAsNumber || null)" />
     </mat-form-field>
 
-    <button mat-stroked-button (click)="loadProducts()">Apply</button>
+    <button mat-stroked-button (click)="applyFilters()">Apply</button>
     <button mat-button (click)="clearSearchFilters()">Clear</button>
 </div>
 
@@ -93,4 +93,9 @@
 
 @if (!isLoading() && products().length === 0) {
 <p class="empty">No products match the current filters.</p>
+}
+
+@if (isPaginated()) {
+    <mat-paginator [length]="totalCount()" [pageSize]="pageSize()" [pageSizeOptions]="[10, 25, 50]"
+        [pageIndex]="page() - 1" (page)="onPageChange($event)" showFirstLastButtons />
 }

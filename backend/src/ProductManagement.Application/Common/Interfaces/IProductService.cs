@@ -1,4 +1,5 @@
 using ProductManagement.Application.Common.DTOs.Product;
+using ProductManagement.Application.Common.Pagination;
 
 namespace ProductManagement.Application.Common.Interfaces;
 
@@ -11,8 +12,7 @@ public interface IProductService
     Task DeleteAsync(int id, CancellationToken ct = default);
     Task<ProductDto> DecrementStockAsync(int id, uint quantity, CancellationToken ct = default);
     Task<ProductDto> IncrementStockAsync(int id, uint quantity, CancellationToken ct = default);
-    Task<IReadOnlyList<ProductDto>> SearchAsync(string name, CancellationToken ct = default);
-    Task<IReadOnlyList<ProductDto>> GetByStockLevelAsync(int min, int max, CancellationToken ct = default);
-
+    Task<PagedResult<ProductDto>> SearchAsync(string name, int page = 1, int pageSize = PaginationConfig.DefaultPageSize, CancellationToken ct = default);
+    Task<PagedResult<ProductDto>> GetByStockLevelAsync(int min, int max, int page = 1, int pageSize = PaginationConfig.DefaultPageSize, CancellationToken ct = default);
 
 }

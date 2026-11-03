@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 
 using ProductManagement.Application.Common.DTOs.Product;
 using ProductManagement.Application.Common.Interfaces;
+using ProductManagement.Application.Common.Pagination;
 
 namespace ProductManagement.Api.Controllers;
 
@@ -79,11 +80,13 @@ public class ProductsController(IProductService productService) : ControllerBase
     }
 
     [HttpGet("search")]
-    [ProducesResponseType<IReadOnlyList<ProductDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<PagedResult<ProductDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<IReadOnlyList<ProductDto>>> Search(
+    public async Task<ActionResult<PagedResult<ProductDto>>> Search(
             [FromQuery] string? name,
-            CancellationToken ct)
+            CancellationToken ct,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = PaginationConfig.DefaultPageSize)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -95,19 +98,21 @@ public class ProductsController(IProductService productService) : ControllerBase
             });
         }
 
-        return Ok(await productService.SearchAsync(name, ct));
+        return Ok(await productService.SearchAsync(name, page, pageSize, ct));
     }
 
 
     [HttpGet("stock-level")]
-    [ProducesResponseType<IReadOnlyList<ProductDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<PagedResult<ProductDto>>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
-    public async Task<ActionResult<IReadOnlyList<ProductDto>>> GetByStockLevel(
+    public async Task<ActionResult<PagedResult<ProductDto>>> GetByStockLevel(
         [FromQuery] int min,
         [FromQuery] int max,
-        CancellationToken ct)
+        CancellationToken ct,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = PaginationConfig.DefaultPageSize)
     {
-        return Ok(await productService.GetByStockLevelAsync(min, max, ct));
+        return Ok(await productService.GetByStockLevelAsync(min, max, page, pageSize, ct));
     }
 
 }

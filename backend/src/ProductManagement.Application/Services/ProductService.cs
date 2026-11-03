@@ -7,6 +7,7 @@ using ProductManagement.Application.Common.DTOs.Product;
 using ProductManagement.Application.Common.Exceptions;
 using ProductManagement.Application.Common.Interfaces;
 using ProductManagement.Application.Common.Logging;
+using ProductManagement.Application.Common.Pagination;
 using ProductManagement.Application.Mappers;
 using ProductManagement.Domain.Models;
 
@@ -141,20 +142,33 @@ public class ProductService(IApplicationDbContext context, ILogger<ProductServic
         return product.MapToDto();
     }
 
-    public async Task<IReadOnlyList<ProductDto>> GetByStockLevelAsync(int min, int max, CancellationToken ct = default)
+    public async Task<PagedResult<ProductDto>> GetByStockLevelAsync(int min, int max, int page = 1, int pageSize = PaginationConfig.DefaultPageSize, CancellationToken ct = default)
     {
         if (min > max)
         {
             throw new InvalidStockRangeException(min, max);
         }
 
-        var productsInStockRange = await context.Products
-            .AsNoTracking()
+        var productQuery = context.Products
             .Where(p => p.Stock >= min && p.Stock <= max)
             .OrderByDescending(p => p.UpdatedAt)
+            .ThenBy(p => p.Id);
+
+        var pageRequest = new PageRequest(page, pageSize);
+
+        var totalCount = await productQuery.CountAsync(ct);
+
+        var items = await productQuery
+            .Skip(pageRequest.Skip)
+            .Take(pageRequest.PageSize)
+            .Select(ProductMapper.ToDtoProjection)
             .ToListAsync(ct);
 
-        return productsInStockRange.MapToDtos();
+        return new PagedResult<ProductDto>(
+            items,
+            pageRequest.Page,
+            pageRequest.PageSize,
+            totalCount);
     }
 
     [SuppressMessage(
@@ -165,17 +179,30 @@ public class ProductService(IApplicationDbContext context, ILogger<ProductServic
      "Globalization",
      "CA1311:Specify a culture or use an invariant version",
      Justification = "EF translates only the parameterless ToLower(); ToLower(CultureInfo) and ToLowerInvariant() are not translatable.")]
-    public async Task<IReadOnlyList<ProductDto>> SearchAsync(string name, CancellationToken ct = default)
+    public async Task<PagedResult<ProductDto>> SearchAsync(string name, int page = 1, int pageSize = PaginationConfig.DefaultPageSize, CancellationToken ct = default)
     {
         var formattedName = name.Trim().ToLowerInvariant();
 
-        var products = await context.Products
-            .AsNoTracking()
+        var productQuery = context.Products
             .Where(p => EF.Functions.Like(p.Name.ToLower(), $"%{formattedName}%"))
             .OrderByDescending(p => p.UpdatedAt)
+            .ThenBy(p => p.Id);
+
+        var pageRequest = new PageRequest(page, pageSize);
+
+        var totalCount = await productQuery.CountAsync(ct);
+
+        var items = await productQuery
+            .Skip(pageRequest.Skip)
+            .Take(pageRequest.PageSize)
+            .Select(ProductMapper.ToDtoProjection)
             .ToListAsync(ct);
 
-        return products.MapToDtos();
+        return new PagedResult<ProductDto>(
+            items,
+            pageRequest.Page,
+            pageRequest.PageSize,
+            totalCount);
     }
 
     public async Task<ProductDto> UpdateAsync(int id, UpdateProductRequest request, CancellationToken ct = default)

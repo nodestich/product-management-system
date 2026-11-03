@@ -7,7 +7,7 @@ import { of } from 'rxjs';
 
 import { ProductList } from './product-list';
 import { ProductService } from '../product.service';
-import { Product } from '../product.models';
+import { PagedResult, Product } from '../product.models';
 import { AuthService } from '../../../../core/auth/auth-service';
 
 const products: Product[] = [
@@ -21,13 +21,30 @@ const products: Product[] = [
   }
 ];
 
+const searchPage: PagedResult<Product> = {
+  items: [products[0], { ...products[0], id: 100001, name: 'Mechanical keyboard' }],
+  page: 1,
+  pageSize: 10,
+  totalCount: 12,
+  totalPages: 2,
+  hasPrevious: false,
+  hasNext: true
+};
+
 describe('ProductList', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [ProductList],
       providers: [
         provideRouter([]),
-        { provide: ProductService, useValue: { getAll: () => of(products) } },
+        {
+          provide: ProductService,
+          useValue: {
+            getAll: () => of(products),
+            search: () => of(searchPage),
+            byStockRange: () => of(searchPage)
+          }
+        },
         { provide: MatDialog, useValue: { open: () => ({ afterClosed: () => of(null) }) } },
         { provide: MatSnackBar, useValue: { open: () => undefined } },
         {
@@ -58,5 +75,42 @@ describe('ProductList', () => {
 
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
     expect(text).toContain('admin@example.com');
+  });
+
+  it('hides the paginator for the unpaginated list', () => {
+    const fixture = TestBed.createComponent(ProductList);
+    fixture.detectChanges();
+
+    const paginator = (fixture.nativeElement as HTMLElement).querySelector('mat-paginator');
+    expect(paginator).toBeNull();
+  });
+
+  it('takes the total count from the paged response and shows the paginator', () => {
+    const fixture = TestBed.createComponent(ProductList);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    component.searchTerm.set('Item');
+    component.applyFilters();
+    fixture.detectChanges();
+
+    expect(component.products().length).toBe(2);
+    expect(component.totalCount()).toBe(12);
+    expect((fixture.nativeElement as HTMLElement).querySelector('mat-paginator')).toBeTruthy();
+  });
+
+  it('returns to page 1 when the filters are cleared', () => {
+    const fixture = TestBed.createComponent(ProductList);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    component.searchTerm.set('Item');
+    component.applyFilters();
+    component.page.set(2);
+
+    component.clearSearchFilters();
+
+    expect(component.page()).toBe(1);
+    expect(component.products().length).toBe(1);
   });
 });

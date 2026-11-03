@@ -75,6 +75,22 @@ The API listens on <http://localhost:5218> and the UI on <http://localhost:4200>
 | GET | `/api/products/search?name={name}` | 200 | 400 |
 | GET | `/api/products/stock-level?min={min}&max={max}` | 200 | 400 |
 
+The two filtered list endpoints are paginated and accept `page` (default 1) and `pageSize` (default 10, maximum 50). They return an envelope rather than a bare array:
+
+```json
+{
+  "items": [ { "id": 100004, "name": "Mouse pad", "price": 12.00, "stock": 3, ... } ],
+  "page": 1,
+  "pageSize": 10,
+  "totalCount": 14,
+  "totalPages": 2,
+  "hasPrevious": false,
+  "hasNext": true
+}
+```
+
+`GET /api/products` is deliberately not paginated and still returns a plain array.
+
 Stock changes return the updated product. Errors use RFC 7807 `ProblemDetails` with a `traceId` that matches the API log.
 
 ## Authentication
@@ -122,7 +138,7 @@ cd backend
 dotnet test
 ```
 
-41 tests: 16 unit tests for the domain entity and 25 integration tests that run the API against a `postgres:16-alpine` container started by Testcontainers. The integration tests log in as the seeded demo user before attempting writes.
+55 tests: 16 unit tests for the domain entity and 39 integration tests that run the API against a `postgres:16-alpine` container started by Testcontainers. The integration tests log in as the seeded demo user before attempting writes.
 
 They cover all nine endpoints, the 400/404/409 paths, and a concurrency test that fires 25 parallel creates and asserts the IDs are the contiguous range 100000-100024.
 
@@ -131,7 +147,7 @@ cd frontend
 npm test -- --watch=false
 ```
 
-7 unit tests covering the product list, both dialog modes and the shell component.
+13 unit tests covering the product list (including the paginated mode), both dialog modes and the shell component.
 
 ## Decisions
 
@@ -181,6 +197,16 @@ The catch is that these errors are not attached to a field, and only the first b
 ### The frontend uses relative URLs
 
 nginx proxies `/api`, `/scalar` and `/openapi` to the API, so the built bundle contains `/api/products` rather than a host name. The same image works on any host and port, there is no CORS configuration, and the Angular dev server proxy makes development use the identical code path.
+
+### Pagination is offset-based and only on the filtered lists
+
+`search` and `stock-level` accept `page` and `pageSize` and return a `PagedResult<T>`. The unfiltered list stays a plain array, because it is the one call a reviewer uses to confirm the API works and an envelope there would only add noise.
+
+Filtering, ordering, counting and slicing all run in SQL: the query stays an `IQueryable` and is only materialised after `Skip`/`Take`, so at most `pageSize` rows are read. `CountAsync` issues a separate `SELECT COUNT(*)` and materialises nothing.
+
+Both queries order by `updatedAt` and then by `id`. The second key matters: seeded and bulk-created products share a timestamp, and without a tiebreaker the database may return tied rows in a different order for each page, so a row can appear twice or not at all.
+
+Offset pagination costs a second round trip for the total and re-evaluates the filter twice. That is the price of knowing `totalPages` up front; keyset pagination would avoid it but cannot jump to page 4.
 
 ## Assumptions
 

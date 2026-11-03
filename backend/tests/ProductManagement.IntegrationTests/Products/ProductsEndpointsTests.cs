@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 
 using ProductManagement.Application.Common.DTOs.Product;
+using ProductManagement.Application.Common.Pagination;
 using ProductManagement.IntegrationTests.Infrastructure;
 
 namespace ProductManagement.IntegrationTests.Products;
@@ -175,10 +176,10 @@ public sealed class ProductEndpointsTests : IAsyncLifetime
         await CreateAsync("Monitor 32 inches");
         await CreateAsync("Mechanical keyboard");
 
-        var results = await _client.GetFromJsonAsync<List<ProductDto>>("/api/products/search?name=MONITOR");
+        var result = await _client.GetFromJsonAsync<PagedResult<ProductDto>>("/api/products/search?name=MONITOR");
 
-        Assert.Single(results!);
-        Assert.StartsWith("Monitor", results![0].Name);
+        Assert.Single(result!.Items);
+        Assert.StartsWith("Monitor", result.Items[0].Name);
     }
 
     [Fact]
@@ -195,9 +196,9 @@ public sealed class ProductEndpointsTests : IAsyncLifetime
         await CreateAsync("BBB", stock: 7);
         await CreateAsync("CCC", stock: 12);
 
-        var results = await _client.GetFromJsonAsync<List<ProductDto>>("/api/products/stock-level?min=3&max=12");
+        var result = await _client.GetFromJsonAsync<PagedResult<ProductDto>>("/api/products/stock-level?min=3&max=12");
 
-        Assert.Equal(3, results!.Count);
+        Assert.Equal(3, result!.Items.Count);
     }
 
     [Fact]

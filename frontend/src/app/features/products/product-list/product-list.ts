@@ -2,7 +2,7 @@ import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { ProductService } from '../product.service';
 import { Product } from '../product.models';
 import { MatDialog } from '@angular/material/dialog';
-import { finalize } from 'rxjs';
+import { Observable, finalize, map } from 'rxjs';
 import { ProductFormDialog } from '../product-form-dialog/product-form-dialog';
 import { CurrencyPipe, DatePipe } from '@angular/common';
 import { MatTableModule } from '@angular/material/table';
@@ -12,6 +12,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
+import { MatPaginatorModule, PageEvent } from '@angular/material/paginator';
 import { ConfirmDialog } from '../../shared/confirm-dialog/confirm-dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { AuthService } from '../../../../core/auth/auth-service';
@@ -21,7 +22,7 @@ import { Router } from '@angular/router';
   imports: [
     CurrencyPipe, DatePipe,
     MatTableModule, MatToolbarModule, MatFormFieldModule, MatInputModule,
-    MatButtonModule, MatIconModule, MatProgressBarModule
+    MatButtonModule, MatIconModule, MatProgressBarModule, MatPaginatorModule
   ],
   selector: 'app-product-list',
   styleUrl: './product-list.scss',
@@ -36,12 +37,17 @@ export class ProductList implements OnInit {
   readonly maxStock = signal<number | null>(null);
   readonly columns = ['id', 'name', 'price', 'stock', 'updatedAt', 'actions'];
 
-  // The API accepts either a name search or a stock range, not both, so the UI
-  // makes the two filter groups mutually exclusive. The range only applies when
-  // both bounds are set, which mirrors loadProducts().
+  readonly page = signal(1);
+  readonly pageSize = signal(10);
+  readonly totalCount = signal(0);
+
+
   readonly isSearchActive = computed(() => this.searchTerm().trim().length > 0);
   readonly isStockRangeActive = computed(() => this.minStock() !== null && this.maxStock() !== null);
   readonly isPartialStockRange = computed(() => (this.minStock() !== null) !== (this.maxStock() !== null));
+
+
+  readonly isPaginated = signal(false);
 
   private readonly authService = inject(AuthService);
 
@@ -66,29 +72,48 @@ export class ProductList implements OnInit {
     });
   }
 
-  loadProducts() {
+  loadProducts(): void {
     const term = this.searchTerm().trim();
     const min = this.minStock();
     const max = this.maxStock();
+    const page = this.page();
+    const pageSize = this.pageSize();
 
-    // Search if there is a search term, if not try by stock range, else get all
-    const request = term
-      ? this.productService.search(term)
+    const isPaginated = term.length > 0 || (min !== null && max !== null);
+
+    const request: Observable<{ items: Product[]; totalCount: number }> = term
+      ? this.productService.search(term, page, pageSize)
       : min !== null && max !== null
-        ? this.productService.byStockRange(min, max)
-        : this.productService.getAll();
+        ? this.productService.byStockRange(min, max, page, pageSize)
+        : this.productService.getAll().pipe(map(items => ({ items, totalCount: items.length })));
 
     this.isLoading.set(true);
     request.pipe(
       finalize(() => this.isLoading.set(false))
-    ).subscribe(data => this.products.set(data));
+    ).subscribe(result => {
+      this.products.set(result.items);
+      this.totalCount.set(result.totalCount);
+      this.isPaginated.set(isPaginated);
+    });
   }
 
+  // Applying a new filter always starts from page 1
+  applyFilters(): void {
+    this.page.set(1);
+    this.loadProducts();
+  }
 
-  clearSearchFilters() {
+  clearSearchFilters(): void {
     this.searchTerm.set('');
     this.minStock.set(null);
     this.maxStock.set(null);
+    this.page.set(1);
+    this.loadProducts();
+  }
+
+  onPageChange(event: PageEvent): void {
+    this.page.set(event.pageIndex + 1);
+    this.pageSize.set(event.pageSize);
     this.loadProducts();
   }
 
@@ -119,7 +144,12 @@ export class ProductList implements OnInit {
     this.dialog.open(
       ProductFormDialog, { width: '420px', data: {} })
       .afterClosed()
-      .subscribe(created => { if (created) this.loadProducts(); });
+      .subscribe(created => {
+        if (!created) return;
+        // A new product sorts to the top by updatedAt, so return to page 1.
+        this.page.set(1);
+        this.loadProducts();
+      });
   }
 
   editProduct(product: Product) {
@@ -141,7 +171,14 @@ export class ProductList implements OnInit {
         if (!confirmed) return;
         this.productService.delete(product.id).subscribe(() => {
           this.products.update(list => list.filter(p => p.id !== product.id));
+          this.totalCount.update(count => Math.max(0, count - 1));
           this.snackBar.open('Product deleted', 'Dismiss', { duration: 3000 });
+
+          // Deleting the last row of a page would leave it empty.
+          if (this.products().length === 0 && this.page() > 1) {
+            this.page.update(p => p - 1);
+            this.loadProducts();
+          }
         });
       });
   }

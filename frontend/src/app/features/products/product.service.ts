@@ -1,6 +1,6 @@
 import { inject, Injectable } from "@angular/core";
 import { HttpClient } from "@angular/common/http";
-import { CreateProductRequest, Product, UpdateProductRequest } from "./product.models";
+import { CreateProductRequest, PagedResult, Product, UpdateProductRequest } from "./product.models";
 import { Observable } from "rxjs";
 
 @Injectable({ providedIn: 'root' })
@@ -36,11 +36,11 @@ export class ProductService {
         return this.http.post<Product>(`${this.base}/${id}/add-to-stock/${qty}`, null);
     }
 
-    search(name: string): Observable<Product[]> {
-        return this.http.get<Product[]>(`${this.base}/search`, { params: { name } });
+    search(name: string, page = 1, pageSize = 10): Observable<PagedResult<Product>> {
+        return this.http.get<PagedResult<Product>>(`${this.base}/search`, { params: { name, page, pageSize } });
     }
 
-    byStockRange(min: number, max: number): Observable<Product[]> {
-        return this.http.get<Product[]>(`${this.base}/stock-level`, { params: { min, max } });
+    byStockRange(min: number, max: number, page = 1, pageSize = 10): Observable<PagedResult<Product>> {
+        return this.http.get<PagedResult<Product>>(`${this.base}/stock-level`, { params: { min, max, page, pageSize } });
     }
 }
