@@ -138,9 +138,13 @@ cd backend
 dotnet test
 ```
 
-55 tests: 16 unit tests for the domain entity and 39 integration tests that run the API against a `postgres:16-alpine` container started by Testcontainers. The integration tests log in as the seeded demo user before attempting writes.
+69 tests across three projects:
 
-They cover all nine endpoints, the 400/404/409 paths, and a concurrency test that fires 25 parallel creates and asserts the IDs are the contiguous range 100000-100024.
+- **UnitTests** - 20 tests over the `Product` entity (factory rules, name and price validation) and the hand-written `ProductMapper`.
+- **IntegrationTests** - 39 tests that run the API against a `postgres:16-alpine` container started by Testcontainers. They cover all nine endpoints, the 400/404/409 paths, pagination, and a concurrency test that fires 25 parallel creates and asserts the IDs are the contiguous range 100000-100024. Writes log in as the seeded demo user first.
+- **Specs** - 10 Gherkin scenarios executed with Reqnroll, kept as executable documentation of the stock and catalogue behaviour.
+
+The `Specs` project shares one container across all scenarios and truncates the `Products` table before each one, so collection parallelism is switched off in `xunit.runner.json`. The Gherkin code-behind is regenerated on every build and is not checked in.
 
 ```
 cd frontend

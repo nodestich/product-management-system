@@ -482,3 +482,6 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Reqnroll generates the Gherkin code-behind on every build
+*.feature.cs
