@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 using ProductManagement.Domain.Models;
 
-namespace ProductManagement.Infrastructure.Persistence.Configurations;
+namespace ProductManagement.Infrastructure.Persistence;
 
 public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
 {

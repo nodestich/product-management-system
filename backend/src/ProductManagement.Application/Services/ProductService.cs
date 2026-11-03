@@ -27,9 +27,9 @@ public class ProductService(IApplicationDbContext context, ILogger<ProductServic
     }
 
 
-    public async Task<ProductDto> DecrementStockAsync(int id, uint quantity, CancellationToken ct = default)
+    public async Task<ProductDto> DecrementStockAsync(int id, int quantity, CancellationToken ct = default)
     {
-        if (quantity == 0)
+        if (quantity <= 0)
         {
             throw new InvalidStockMutationException(id, quantity);
         }
@@ -66,9 +66,9 @@ public class ProductService(IApplicationDbContext context, ILogger<ProductServic
         return updated.MapToDto();
     }
 
-    public async Task<ProductDto> IncrementStockAsync(int id, uint quantity, CancellationToken ct = default)
+    public async Task<ProductDto> IncrementStockAsync(int id, int quantity, CancellationToken ct = default)
     {
-        if (quantity == 0)
+        if (quantity <= 0)
         {
             throw new InvalidStockMutationException(id, quantity);
         }

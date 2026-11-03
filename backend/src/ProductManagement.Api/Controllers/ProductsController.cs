@@ -63,7 +63,7 @@ public class ProductsController(IProductService productService) : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<ProductDto>> DecrementStock(int id, uint quantity, CancellationToken ct)
+    public async Task<ActionResult<ProductDto>> DecrementStock(int id, int quantity, CancellationToken ct)
     {
         return Ok(await productService.DecrementStockAsync(id, quantity, ct));
     }
@@ -74,7 +74,7 @@ public class ProductsController(IProductService productService) : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<ProductDto>> AddToStock(int id, uint quantity, CancellationToken ct)
+    public async Task<ActionResult<ProductDto>> AddToStock(int id, int quantity, CancellationToken ct)
     {
         return Ok(await productService.IncrementStockAsync(id, quantity, ct));
     }
