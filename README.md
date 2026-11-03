@@ -215,7 +215,7 @@ CREATE INDEX "IX_Products_Name_Trgm" ON "Products" USING gin (lower("Name") gin_
 
 - `PUT` replaces name and price only. Stock is changed through the two stock endpoints, which keeps concurrent stock updates atomic.
 - `DELETE` is permanent; there is no soft delete.
-- Lists are unpaginated and return every matching row.
+- The unfiltered product list is unpaginated and returns every row; the two filtered lists are paginated.
 - Maximum stock of 1000 is an assumption, not part of the specification; it gives the stock-overflow path something to test.
 - The six-digit ID space allows 900,000 products. Running out raises an error rather than producing a longer id.
 - The compose stack runs the API in Development so the seed data and API documentation are available. A production deployment would use Production and supply secrets through the environment.
