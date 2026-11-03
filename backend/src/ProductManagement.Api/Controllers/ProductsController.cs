@@ -88,16 +88,6 @@ public class ProductsController(IProductService productService) : ControllerBase
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = PaginationConfig.DefaultPageSize)
     {
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            return BadRequest(new ProblemDetails
-            {
-                Status = StatusCodes.Status400BadRequest,
-                Title = "Invalid request",
-                Detail = "Query parameter 'name' is required."
-            });
-        }
-
         return Ok(await productService.SearchAsync(name, page, pageSize, ct));
     }
 

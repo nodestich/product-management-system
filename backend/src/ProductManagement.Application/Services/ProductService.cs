@@ -179,8 +179,13 @@ public class ProductService(IApplicationDbContext context, ILogger<ProductServic
      "Globalization",
      "CA1311:Specify a culture or use an invariant version",
      Justification = "EF translates only the parameterless ToLower(); ToLower(CultureInfo) and ToLowerInvariant() are not translatable.")]
-    public async Task<PagedResult<ProductDto>> SearchAsync(string name, int page = 1, int pageSize = PaginationConfig.DefaultPageSize, CancellationToken ct = default)
+    public async Task<PagedResult<ProductDto>> SearchAsync(string? name, int page = 1, int pageSize = PaginationConfig.DefaultPageSize, CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new InvalidSearchTermException();
+        }
+
         var formattedName = name.Trim().ToLowerInvariant();
 
         var productQuery = context.Products

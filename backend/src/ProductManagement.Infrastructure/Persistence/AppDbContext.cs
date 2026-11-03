@@ -19,5 +19,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options)
 
         // This automaticaly discovers and applies all configs instead of doing manually for each.
         builder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+
+        // Trigram matching for the product name search index.
+        builder.HasPostgresExtension("pg_trgm");
     }
 }

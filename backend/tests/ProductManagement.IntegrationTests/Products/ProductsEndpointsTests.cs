@@ -183,10 +183,15 @@ public sealed class ProductEndpointsTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Search_Blank_Returns400()
+    public async Task Search_Blank_Returns400ProblemDetails()
     {
         var response = await _client.GetAsync("/api/products/search");
+
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(400, problem.GetProperty("status").GetInt32());
+        Assert.True(problem.TryGetProperty("traceId", out _));
     }
 
     [Fact]

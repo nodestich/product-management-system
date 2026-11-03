@@ -119,18 +119,6 @@ The persistence side derives from `IdentityUserContext<ApplicationUser, Guid>` i
 | `stock` | int | 0-1000, always returned |
 | `createdAt` / `updatedAt` | timestamp with time zone | UTC, set by the API |
 
-## Seed data
-
-Inserted only when the table is empty, in Development:
-
-| ID | Name | Price | Stock |
-| --- | --- | --- | --- |
-| 100000 | Monitor 32 inches | 249.99 | 12 |
-| 100001 | Mechanical keyboard | 189.99 | 8 |
-| 100002 | Wireless mouse | 39.99 | 25 |
-| 100003 | HDMI cable | 4.75 | 100 |
-| 100004 | Mouse pad | 12.00 | 3 |
-
 ## Tests
 
 ```
@@ -211,6 +199,17 @@ Filtering, ordering, counting and slicing all run in SQL: the query stays an `IQ
 Both queries order by `updatedAt` and then by `id`. The second key matters: seeded and bulk-created products share a timestamp, and without a tiebreaker the database may return tied rows in a different order for each page, so a row can appear twice or not at all.
 
 Offset pagination costs a second round trip for the total and re-evaluates the filter twice. That is the price of knowing `totalPages` up front; keyset pagination would avoid it but cannot jump to page 4.
+
+### Product search is backed by a trigram index
+
+Search is a case-insensitive "contains" match, which no btree index can serve: the term has no usable prefix and the query wraps the column in `lower()`. `pg_trgm` supplies the missing piece, a GIN index over the exact indexed expression:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX "IX_Products_Name_Trgm" ON "Products" USING gin (lower("Name") gin_trgm_ops);
+```
+
+[`ProductConfiguration`](backend/src/ProductManagement.Infrastructure/Persistence/ProductConfiguration.cs) therefore declares no `Name` index — EF Core cannot model an index over an expression, so `AddProductNameTrigramIndex` carries it as raw SQL. Two consequences worth knowing: terms shorter than three characters cannot be split into trigrams and fall back to a sequential scan, and the GIN index is larger and slower to write than the btree it replaced, which is the right trade for a table read far more often than written.
 
 ## Assumptions
 

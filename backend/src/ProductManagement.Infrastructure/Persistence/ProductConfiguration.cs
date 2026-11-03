@@ -35,7 +35,9 @@ public sealed class ProductConfiguration : IEntityTypeConfiguration<Product>
         builder.Property(p => p.CreatedAt).HasColumnType("timestamp with time zone");
         builder.Property(p => p.UpdatedAt).HasColumnType("timestamp with time zone");
 
-        builder.HasIndex(p => p.Name);
-
+        // Name is only ever queried with a case-insensitive "contains" search
+        // (lower("Name") LIKE '%term%'), which a btree index on "Name" cannot serve.
+        // It is backed by a pg_trgm GIN index on lower("Name") created in the
+        // AddProductNameTrigramIndex migration: EF Core cannot model expression indexes.
     }
 }
