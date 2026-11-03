@@ -168,9 +168,9 @@ Two instances decrementing the last unit cannot oversell. The second statement w
 
 ### PostgreSQL instead of SQL Server
 
-EF Core migrations are provider-agnostic, so the choice mostly affects whoever has to run this. PostgreSQL has small native images, which keeps `docker compose up` fast.
+PostgreSQL has small native images, which keeps `docker compose up` fast, and it expresses the ID requirement directly in the schema through identity and sequence options.
 
-It also expresses the ID requirement directly in the schema through identity and sequence options. Swapping to SQL Server would be a `UseNpgsql` -> `UseSqlServer` change plus regenerated migrations, because the code avoids raw SQL and provider-specific types.
+Migrations are *not* portable, though. They are written in the provider's dialect and the column types are declared explicitly (`timestamp with time zone`, `numeric(18,2)`), and the product search index is raw SQL because EF Core cannot model indexes over expressions. Moving to SQL Server would mean `UseNpgsql` -> `UseSqlServer`, re-mapping those column types, regenerating the migrations, and redesigning the search index: SQL Server has no `pg_trgm` equivalent and `LIKE '%term%'` cannot use an index there either, so the choice becomes full-text search (word and prefix matching, not infix) or a sequential scan. The Domain and Application layers would not change at all.
 
 ### No repository layer
 
