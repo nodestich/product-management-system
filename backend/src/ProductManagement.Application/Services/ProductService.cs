@@ -59,9 +59,16 @@ public class ProductService(IApplicationDbContext context, ILogger<ProductServic
                 : new InsufficientStockException(id, quantity);
         }
 
+        // FirstOrDefault to ensure throw if a product was deleted mid update
         var updated = await context.Products
             .AsNoTracking()
-            .FirstAsync(p => p.Id == id, ct);
+            .FirstOrDefaultAsync(p => p.Id == id, ct);
+
+        if (updated is null)
+        {
+            ProductServiceLogs.ProductNotFound(logger, id);
+            throw new ProductNotFoundException(id);
+        }
 
         return updated.MapToDto();
     }
@@ -94,9 +101,16 @@ public class ProductService(IApplicationDbContext context, ILogger<ProductServic
                 : new StockOverflowException(id, quantity);
         }
 
+        // FirstOrDefault to ensure throw if a product was deleted mid update
         var updated = await context.Products
             .AsNoTracking()
-            .FirstAsync(p => p.Id == id, ct);
+            .FirstOrDefaultAsync(p => p.Id == id, ct);
+
+        if (updated is null)
+        {
+            ProductServiceLogs.ProductNotFound(logger, id);
+            throw new ProductNotFoundException(id);
+        }
 
         return updated.MapToDto();
 
@@ -223,7 +237,15 @@ public class ProductService(IApplicationDbContext context, ILogger<ProductServic
 
         product.Update(request.Name, request.Price);
 
-        await context.SaveChangesAsync(ct);
+        try
+        {
+            await context.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new ProductNotFoundException(id);
+        }
+
         ProductServiceLogs.ProductUpdated(logger, product.Id);
 
         return product.MapToDto();
