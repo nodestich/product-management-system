@@ -143,6 +143,41 @@ npm test -- --watch=false
 
 18 unit tests covering the product list (filters, pagination and the re-query after a mutation), both dialog modes and the shell component.
 
+## Static analysis
+
+SonarQube Community Build runs locally in Docker behind the `sonar` profile, so a plain `docker compose up`
+is unaffected.
+
+One-time setup:
+
+1. Authenticate to the Docker Hardened Images registry if the pull fails with `unauthorized`
+   (a free Docker ID is enough): `docker login dhi.io`
+2. Start the server: `docker compose --profile sonar up -d sonar`
+3. Open <http://localhost:9000>, sign in with `admin` / `admin` and change the password.
+4. Generate a token at <http://localhost:9000/account/security> (avatar menu > Account > Security), then
+   `copy .env.example .env` and paste it in.
+
+Run an analysis:
+
+```
+./scripts/analyze-sonar.ps1
+```
+
+The script restores the tools, starts the scanner, builds in Release, runs the unit, integration and specs
+tests with coverage, then completes the analysis and waits for the quality gate. A failing gate makes the
+script exit non-zero. Results are at <http://localhost:9000/dashboard?id=product-management-system>.
+
+Coverage comes from Coverlet's Cobertura output. Migrations, `Program.cs` and the model snapshot are excluded.
+
+The image is pinned by tag; tighten it to a digest after pulling:
+
+```
+docker inspect --format "{{index .RepoDigests 0}}" dhi.io/sonarqube:26-debian-dev
+```
+
+Community Build analyses a single branch and cannot comment on pull requests, so the gate is enforced by
+the script's exit code. New code is defined by number of days, not by a reference branch.
+
 ## Decisions
 
 ### Product IDs are assigned by the database

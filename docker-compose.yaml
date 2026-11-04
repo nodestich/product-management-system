@@ -53,5 +53,48 @@ services:
       api:
         condition: service_healthy
 
+  # Static analysis stack. Opt-in: docker compose --profile sonar up -d
+  sonar-db:
+    profiles: [sonar]
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: sonarqube
+      POSTGRES_USER: sonarqube
+      POSTGRES_PASSWORD: sonarqube
+    volumes:
+      - sonar-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonarqube -d sonarqube"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  sonar:
+    profiles: [sonar]
+    # Docker Hardened Image, pinned by digest for reproducibility.
+    image: dhi.io/sonarqube:26-debian-dev@sha256:eeb004c6b9160a26b94e0d31ac48919ad7da5401c9b185b02380242dc8355dd5
+    depends_on:
+      sonar-db:
+        condition: service_healthy
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonar-db:5432/sonarqube
+      SONAR_JDBC_USERNAME: sonarqube
+      SONAR_JDBC_PASSWORD: sonarqube
+    ports:
+      - "9000:9000"
+    ulimits:
+      nofile:
+        soft: 131072
+        hard: 131072
+      nproc: 8192
+    volumes:
+      - sonar-data:/opt/sonarqube/data
+      - sonar-logs:/opt/sonarqube/logs
+      - sonar-extensions:/opt/sonarqube/extensions
+
 volumes:
   postgres-data:
+  sonar-db-data:
+  sonar-data:
+  sonar-logs:
+  sonar-extensions:
