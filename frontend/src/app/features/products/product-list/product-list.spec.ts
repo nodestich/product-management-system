@@ -9,6 +9,7 @@ import { ProductList } from './product-list';
 import { ProductService } from '../product.service';
 import { PagedResult, Product } from '../product.models';
 import { AuthService } from '../../../../core/auth/auth-service';
+import { ConfirmDialog } from '../../shared/confirm-dialog/confirm-dialog';
 
 const products: Product[] = [
   {
@@ -38,18 +39,22 @@ describe('ProductList', () => {
     byStockRange: ReturnType<typeof vi.fn>;
     addToStock: ReturnType<typeof vi.fn>;
     decrementStock: ReturnType<typeof vi.fn>;
+    delete: ReturnType<typeof vi.fn>;
   };
   let dialogResult: Product | null;
+  let confirmResult: boolean;
 
   beforeEach(async () => {
     dialogResult = null;
+    confirmResult = false;
 
     service = {
       getAll: vi.fn(() => of(products)),
       search: vi.fn(() => of(searchPage)),
       byStockRange: vi.fn(() => of(searchPage)),
       addToStock: vi.fn((_id: number, _qty: number) => of({ ...products[0], stock: 13 })),
-      decrementStock: vi.fn((_id: number, _qty: number) => of({ ...products[0], stock: 11 }))
+      decrementStock: vi.fn((_id: number, _qty: number) => of({ ...products[0], stock: 11 })),
+      delete: vi.fn(() => of(void 0))
     };
 
     await TestBed.configureTestingModule({
@@ -57,7 +62,14 @@ describe('ProductList', () => {
       providers: [
         provideRouter([]),
         { provide: ProductService, useValue: service },
-        { provide: MatDialog, useValue: { open: () => ({ afterClosed: () => of(dialogResult) }) } },
+        {
+          provide: MatDialog,
+          useValue: {
+            open: (component: unknown) => ({
+              afterClosed: () => of(component === ConfirmDialog ? confirmResult : dialogResult)
+            })
+          }
+        },
         { provide: MatSnackBar, useValue: { open: () => undefined } },
         {
           provide: AuthService,
@@ -207,5 +219,78 @@ describe('ProductList', () => {
     expect(service.getAll).toHaveBeenCalledTimes(1);
     expect(service.byStockRange).not.toHaveBeenCalled();
     expect(service.search).not.toHaveBeenCalled();
+  });
+
+  // The mutation handler must re-run the query that produced the visible rows, not
+  // re-read the inputs: those hold edits the user typed but never applied.
+  it('re-queries with the applied term, not the current input value', () => {
+    const fixture = TestBed.createComponent(ProductList);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    component.searchTerm.set('Monitor');
+    component.applyFilters();
+
+    expect(service.search).toHaveBeenCalledTimes(1);
+
+    component.onSearchInput('Keyboard');
+
+    component.adjustStock(products[0], 1);
+
+    expect(service.search).toHaveBeenCalledTimes(2);
+    expect(service.search).toHaveBeenLastCalledWith('Monitor', 1, 10);
+  });
+
+  it('re-queries the applied range, not a search term typed but never applied', () => {
+    const fixture = TestBed.createComponent(ProductList);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    component.minStock.set(1);
+    component.maxStock.set(5);
+    component.applyFilters();
+
+    expect(service.byStockRange).toHaveBeenCalledTimes(1);
+
+    component.onSearchInput('mon');
+
+    component.adjustStock(products[0], 1);
+
+    expect(service.byStockRange).toHaveBeenCalledTimes(2);
+    expect(service.search).not.toHaveBeenCalled();
+  });
+
+  it('re-queries the applied filter after a delete', () => {
+    const fixture = TestBed.createComponent(ProductList);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    component.searchTerm.set('Monitor');
+    component.applyFilters();
+
+    expect(service.search).toHaveBeenCalledTimes(1);
+
+    confirmResult = true;
+    component.removeProduct(products[0]);
+
+    expect(service.delete).toHaveBeenCalledWith(products[0].id);
+    expect(service.search).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns to page 1 and re-queries after a product is created', () => {
+    const fixture = TestBed.createComponent(ProductList);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    component.searchTerm.set('Monitor');
+    component.applyFilters();
+    component.page.set(2);
+
+    dialogResult = { ...products[0], id: 100099, name: 'New product' };
+    component.createProduct();
+
+    expect(component.page()).toBe(1);
+    expect(service.search).toHaveBeenCalledTimes(2);
+    expect(service.search).toHaveBeenLastCalledWith('Monitor', 1, 10);
   });
 });
