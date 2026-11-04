@@ -24,8 +24,8 @@
 
     <mat-form-field appearance="outline">
         <mat-label>Min stock</mat-label>
-        <input matInput type="number" [value]="minStock() ?? ''" [disabled]="isSearchActive()"
-            (input)="minStock.set($any($event.target).valueAsNumber || null)" />
+        <input matInput type="number" min="0" [value]="minStock() ?? ''" [disabled]="isSearchActive()"
+            (input)="onMinStockInput($any($event.target).valueAsNumber)" />
         @if (isSearchActive()) {
         <mat-hint>Clear filters to filter by stock</mat-hint>
         } @else if (isPartialStockRange()) {
@@ -35,8 +35,8 @@
 
     <mat-form-field appearance="outline">
         <mat-label>Max stock</mat-label>
-        <input matInput type="number" [value]="maxStock() ?? ''" [disabled]="isSearchActive()"
-            (input)="maxStock.set($any($event.target).valueAsNumber || null)" />
+        <input matInput type="number" min="0" [value]="maxStock() ?? ''" [disabled]="isSearchActive()"
+            (input)="onMaxStockInput($any($event.target).valueAsNumber)" />
     </mat-form-field>
 
     <button mat-stroked-button (click)="applyFilters()">Apply</button>

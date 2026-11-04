@@ -213,6 +213,15 @@ public sealed class ProductEndpointsTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("/api/products/stock-level?min=-1&max=10")]
+    [InlineData("/api/products/stock-level?min=0&max=-1")]
+    public async Task StockLevel_NegativeBound_Returns400(string url)
+    {
+        var response = await _client.GetAsync(url);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
     [Fact]
     public async Task Timestamps_SerializeWithUtcSuffix()
     {

@@ -158,7 +158,8 @@ public class ProductService(IApplicationDbContext context, ILogger<ProductServic
 
     public async Task<PagedResult<ProductDto>> GetByStockLevelAsync(int min, int max, int page = 1, int pageSize = PaginationConfig.DefaultPageSize, CancellationToken ct = default)
     {
-        if (min > max)
+        // Stock can never be negative, so a negative bound cannot match a real row.
+        if (min < 0 || max < 0 || min > max)
         {
             throw new InvalidStockRangeException(min, max);
         }

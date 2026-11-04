@@ -49,6 +49,10 @@ export class ProductList implements OnInit {
 
   readonly isPaginated = signal(false);
 
+  // The query that produced what is on screen. Refreshing after a mutation re-runs this
+  // rather than the live inputs, which may hold a term the user typed but never applied.
+  private applied: { term: string; min: number | null; max: number | null } | null = null;
+
   private readonly authService = inject(AuthService);
 
   // A signal, so the toolbar reacts to sign-in and sign-out.
@@ -73,9 +77,10 @@ export class ProductList implements OnInit {
   }
 
   loadProducts(): void {
-    const term = this.searchTerm().trim();
-    const min = this.minStock();
-    const max = this.maxStock();
+    this.fetch(this.searchTerm().trim(), this.minStock(), this.maxStock());
+  }
+
+  private fetch(term: string, min: number | null, max: number | null): void {
     const page = this.page();
     const pageSize = this.pageSize();
 
@@ -87,6 +92,8 @@ export class ProductList implements OnInit {
         ? this.productService.byStockRange(min, max, page, pageSize)
         : this.productService.getAll().pipe(map(items => ({ items, totalCount: items.length })));
 
+    this.applied = { term, min, max };
+
     this.isLoading.set(true);
     request.pipe(
       finalize(() => this.isLoading.set(false))
@@ -94,7 +101,30 @@ export class ProductList implements OnInit {
       this.products.set(result.items);
       this.totalCount.set(result.totalCount);
       this.isPaginated.set(isPaginated);
+
+      // A mutation can leave the current page past the end of the filtered set.
+      // totalPages is derived from the returned count, so this settles in one retry.
+      const totalPages = Math.max(1, Math.ceil(result.totalCount / pageSize));
+
+      if (page > totalPages) {
+        this.page.set(totalPages);
+        this.fetch(term, min, max);
+      }
     });
+  }
+
+  private hasAppliedFilter(): boolean {
+    const applied = this.applied;
+
+    return applied !== null && (applied.term.length > 0 || (applied.min !== null && applied.max !== null));
+  }
+
+  // Re-run the applied query, keeping the current page unless one is given.
+  private reloadApplied(page = this.page()): void {
+    const applied = this.applied ?? { term: '', min: null, max: null };
+
+    this.page.set(page);
+    this.fetch(applied.term, applied.min, applied.max);
   }
 
   // Applying a new filter always starts from page 1
@@ -121,6 +151,16 @@ export class ProductList implements OnInit {
     this.searchTerm.set(value);
   }
 
+  // valueAsNumber is NaN when the field is empty; using `|| null` here would also
+  // discard a legitimate 0.
+  onMinStockInput(value: number): void {
+    this.minStock.set(Number.isNaN(value) ? null : value);
+  }
+
+  onMaxStockInput(value: number): void {
+    this.maxStock.set(Number.isNaN(value) ? null : value);
+  }
+
   adjustStock(product: Product, quantity: number) {
     const request = quantity > 0
       ? this.productService.addToStock(product.id, quantity)
@@ -128,7 +168,14 @@ export class ProductList implements OnInit {
 
     request.subscribe({
       next: updatedProduct => {
-        this.products.update(list => list.map(p => p.id === updatedProduct.id ? updatedProduct : p));
+        // A stock change can move the row out of the active range, so the filtered
+        // list has to come from the server again. Unfiltered keeps the patch so the
+        // row does not jump to the top of the table.
+        if (this.hasAppliedFilter()) {
+          this.reloadApplied();
+        } else {
+          this.products.update(list => list.map(p => p.id === updatedProduct.id ? updatedProduct : p));
+        }
 
         this.snackBar.open(
           `${updatedProduct.name} stock updated to ${updatedProduct.stock}`,
@@ -147,8 +194,7 @@ export class ProductList implements OnInit {
       .subscribe(created => {
         if (!created) return;
         // A new product sorts to the top by updatedAt, so return to page 1.
-        this.page.set(1);
-        this.loadProducts();
+        this.reloadApplied(1);
       });
   }
 
@@ -156,7 +202,12 @@ export class ProductList implements OnInit {
     this.dialog.open(ProductFormDialog, { width: '420px', data: { product: product } })
       .afterClosed()
       .subscribe(updated => {
-        if (updated) {
+        if (!updated) return;
+
+        // A rename can drop the row out of an active name search.
+        if (this.hasAppliedFilter()) {
+          this.reloadApplied();
+        } else {
           this.products.update(list => list.map(p => p.id === updated.id ? updated : p));
         }
       });
@@ -170,15 +221,15 @@ export class ProductList implements OnInit {
       .subscribe(confirmed => {
         if (!confirmed) return;
         this.productService.delete(product.id).subscribe(() => {
-          this.products.update(list => list.filter(p => p.id !== product.id));
-          this.totalCount.update(count => Math.max(0, count - 1));
-          this.snackBar.open('Product deleted', 'Dismiss', { duration: 3000 });
-
-          // Deleting the last row of a page would leave it empty.
-          if (this.products().length === 0 && this.page() > 1) {
-            this.page.update(p => p - 1);
-            this.loadProducts();
+          if (this.hasAppliedFilter()) {
+            // fetch() clamps the page when the deletion empties it.
+            this.reloadApplied();
+          } else {
+            this.products.update(list => list.filter(p => p.id !== product.id));
+            this.totalCount.update(count => Math.max(0, count - 1));
           }
+
+          this.snackBar.open('Product deleted', 'Dismiss', { duration: 3000 });
         });
       });
   }

@@ -32,20 +32,32 @@ const searchPage: PagedResult<Product> = {
 };
 
 describe('ProductList', () => {
+  let service: {
+    getAll: ReturnType<typeof vi.fn>;
+    search: ReturnType<typeof vi.fn>;
+    byStockRange: ReturnType<typeof vi.fn>;
+    addToStock: ReturnType<typeof vi.fn>;
+    decrementStock: ReturnType<typeof vi.fn>;
+  };
+  let dialogResult: Product | null;
+
   beforeEach(async () => {
+    dialogResult = null;
+
+    service = {
+      getAll: vi.fn(() => of(products)),
+      search: vi.fn(() => of(searchPage)),
+      byStockRange: vi.fn(() => of(searchPage)),
+      addToStock: vi.fn((_id: number, _qty: number) => of({ ...products[0], stock: 13 })),
+      decrementStock: vi.fn((_id: number, _qty: number) => of({ ...products[0], stock: 11 }))
+    };
+
     await TestBed.configureTestingModule({
       imports: [ProductList],
       providers: [
         provideRouter([]),
-        {
-          provide: ProductService,
-          useValue: {
-            getAll: () => of(products),
-            search: () => of(searchPage),
-            byStockRange: () => of(searchPage)
-          }
-        },
-        { provide: MatDialog, useValue: { open: () => ({ afterClosed: () => of(null) }) } },
+        { provide: ProductService, useValue: service },
+        { provide: MatDialog, useValue: { open: () => ({ afterClosed: () => of(dialogResult) }) } },
         { provide: MatSnackBar, useValue: { open: () => undefined } },
         {
           provide: AuthService,
@@ -112,5 +124,88 @@ describe('ProductList', () => {
 
     expect(component.page()).toBe(1);
     expect(component.products().length).toBe(1);
+  });
+
+  it('treats 0 as a real Min stock bound instead of an empty field', () => {
+    const fixture = TestBed.createComponent(ProductList);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    const minInput = (fixture.nativeElement as HTMLElement)
+      .querySelectorAll<HTMLInputElement>('input[type=number]')[0];
+
+    minInput.value = '0';
+    minInput.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    expect(component.minStock()).toBe(0);
+
+    component.maxStock.set(5);
+    component.applyFilters();
+
+    expect(service.byStockRange).toHaveBeenCalledWith(0, 5, 1, 10);
+  });
+
+  it('clears the Min stock bound when the field is emptied', () => {
+    const fixture = TestBed.createComponent(ProductList);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    const minInput = (fixture.nativeElement as HTMLElement)
+      .querySelectorAll<HTMLInputElement>('input[type=number]')[0];
+
+    minInput.value = '';
+    minInput.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+
+    expect(component.minStock()).toBeNull();
+  });
+
+  it('re-queries the applied stock range after a stock change', () => {
+    const fixture = TestBed.createComponent(ProductList);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    component.minStock.set(1);
+    component.maxStock.set(5);
+    component.applyFilters();
+
+    expect(service.byStockRange).toHaveBeenCalledTimes(1);
+
+    component.adjustStock(products[0], 1);
+
+    expect(service.byStockRange).toHaveBeenCalledTimes(2);
+    expect(service.byStockRange).toHaveBeenLastCalledWith(1, 5, 1, 10);
+  });
+
+  it('re-queries the applied search after a rename', () => {
+    const fixture = TestBed.createComponent(ProductList);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    component.searchTerm.set('Monitor');
+    component.applyFilters();
+
+    expect(service.search).toHaveBeenCalledTimes(1);
+
+    dialogResult = { ...products[0], name: 'Keyboard' };
+    component.editProduct(products[0]);
+
+    expect(service.search).toHaveBeenCalledTimes(2);
+  });
+
+  it('patches the row in place and issues no request when no filter is applied', () => {
+    const fixture = TestBed.createComponent(ProductList);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+
+    expect(component.products()[0].stock).toBe(12);
+
+    component.adjustStock(products[0], 1);
+
+    expect(component.products()[0].stock).toBe(13);
+    expect(service.getAll).toHaveBeenCalledTimes(1);
+    expect(service.byStockRange).not.toHaveBeenCalled();
+    expect(service.search).not.toHaveBeenCalled();
   });
 });

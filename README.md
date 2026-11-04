@@ -91,6 +91,8 @@ The two filtered list endpoints are paginated and accept `page` (default 1) and 
 
 `GET /api/products` is deliberately not paginated and still returns a plain array.
 
+For `stock-level`, `min` and `max` are both inclusive and must be `>= 0`; a negative bound or `min > max` returns 400.
+
 Stock changes return the updated product. Errors use RFC 7807 `ProblemDetails` with a `traceId` that matches the API log.
 
 ## Authentication
@@ -126,10 +128,10 @@ cd backend
 dotnet test
 ```
 
-69 tests across three projects:
+71 tests across three projects:
 
 - **UnitTests** - 20 tests over the `Product` entity (factory rules, name and price validation) and the hand-written `ProductMapper`.
-- **IntegrationTests** - 39 tests that run the API against a `postgres:16-alpine` container started by Testcontainers. They cover all nine endpoints, the 400/404/409 paths, pagination, and a concurrency test that fires 25 parallel creates and asserts the IDs are the contiguous range 100000-100024. Writes log in as the seeded demo user first.
+- **IntegrationTests** - 41 tests that run the API against a `postgres:16-alpine` container started by Testcontainers. They cover all nine endpoints, the 400/404/409 paths, pagination, and a concurrency test that fires 25 parallel creates and asserts the IDs are the contiguous range 100000-100024. Writes log in as the seeded demo user first.
 - **Specs** - 10 Gherkin scenarios executed with Reqnroll, kept as executable documentation of the stock and catalogue behaviour.
 
 The `Specs` project shares one container across all scenarios and truncates the `Products` table before each one, so collection parallelism is switched off in `xunit.runner.json`. The Gherkin code-behind is regenerated on every build and is not checked in.
@@ -139,7 +141,7 @@ cd frontend
 npm test -- --watch=false
 ```
 
-13 unit tests covering the product list (including the paginated mode), both dialog modes and the shell component.
+18 unit tests covering the product list (filters, pagination and the re-query after a mutation), both dialog modes and the shell component.
 
 ## Decisions
 
