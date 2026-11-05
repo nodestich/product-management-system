@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 
-using ProductManagement.Application.Common.DTOs.Product;
+using ProductManagement.Application.DTOs.Product;
 using ProductManagement.Application.Common.Pagination;
 using ProductManagement.Specs.Infrastructure;
 

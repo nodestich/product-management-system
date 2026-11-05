@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-using ProductManagement.Application.Common.DTOs.Product;
+using ProductManagement.Application.DTOs.Product;
 using ProductManagement.Application.Common.Interfaces;
 using ProductManagement.Application.Common.Pagination;
 

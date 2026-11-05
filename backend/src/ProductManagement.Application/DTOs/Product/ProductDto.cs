@@ -1,5 +1,5 @@
 
-namespace ProductManagement.Application.Common.DTOs.Product;
+namespace ProductManagement.Application.DTOs.Product;
 
 public sealed record ProductDto(
     int Id,
