@@ -33,12 +33,9 @@ public sealed class AuthController(
             isPersistent: true,
             lockoutOnFailure: true);
 
-        if (!result.Succeeded)
-        {
-            return Problem(statusCode: StatusCodes.Status401Unauthorized, title: "Invalid email or password.");
-        }
-
-        return Ok(new CurrentUserResponse(user.Id, user.Email!));
+        return result.Succeeded
+            ? Ok(new CurrentUserResponse(user.Id, user.Email!))
+            : Problem(statusCode: StatusCodes.Status401Unauthorized, title: "Invalid email or password.");
     }
 
     [HttpPost("logout")]

@@ -1,4 +1,4 @@
-using ProductManagement.Application.Common.DTOs.Product;
+using ProductManagement.Application.DTOs.Product;
 using ProductManagement.Application.Common.Pagination;
 
 namespace ProductManagement.Application.Common.Interfaces;

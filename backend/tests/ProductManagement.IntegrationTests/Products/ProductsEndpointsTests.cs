@@ -2,24 +2,18 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 
-using ProductManagement.Application.Common.DTOs.Product;
+using ProductManagement.Application.DTOs.Product;
 using ProductManagement.Application.Common.Pagination;
 using ProductManagement.IntegrationTests.Infrastructure;
 
 namespace ProductManagement.IntegrationTests.Products;
 
 [Collection(nameof(ApiCollectionFixture))]
-public sealed class ProductEndpointsTests : IAsyncLifetime
+public sealed class ProductEndpointsTests(ApiFactory factory) : IAsyncLifetime
 {
-    private readonly ApiFactory _factory;
-    private readonly HttpClient _client;
+    private readonly ApiFactory _factory = factory;
+    private readonly HttpClient _client = factory.CreateClient();
     private HttpClient _authClient = null!;
-
-    public ProductEndpointsTests(ApiFactory factory)
-    {
-        _factory = factory;
-        _client = factory.CreateClient();
-    }
 
     public async Task InitializeAsync()
     {

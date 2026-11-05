@@ -1,6 +1,6 @@
 using System.Linq.Expressions;
 
-using ProductManagement.Application.Common.DTOs.Product;
+using ProductManagement.Application.DTOs.Product;
 using ProductManagement.Domain.Models;
 
 namespace ProductManagement.Application.Mappers;
