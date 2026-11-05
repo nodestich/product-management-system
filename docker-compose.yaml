@@ -92,9 +92,32 @@ services:
       - sonar-logs:/opt/sonarqube/logs
       - sonar-extensions:/opt/sonarqube/extensions
 
+  # docker compose --profile sonar run --rm sonar-scan
+  sonar-scan:
+    profiles: [sonar]
+    build:
+      context: .
+      dockerfile: Dockerfile.sonarscan
+    environment:
+      SONAR_HOST_URL: http://sonar:9000
+      SONAR_TOKEN: ${SONAR_TOKEN:-}
+      TESTCONTAINERS_HOST_OVERRIDE: host.docker.internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # The integration tests start their own throwaway container, so a daemon is needed.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./backend/TestResults:/src/backend/TestResults
+      - sonar-scanner-cache:/root/.sonar/cache
+      - ./.git:/src/.git:ro
+    depends_on:
+      - sonar
+    restart: "no"
+
 volumes:
   postgres-data:
   sonar-db-data:
   sonar-data:
   sonar-logs:
   sonar-extensions:
+  sonar-scanner-cache:

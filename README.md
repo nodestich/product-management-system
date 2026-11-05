@@ -150,33 +150,38 @@ is unaffected.
 
 One-time setup:
 
-1. Authenticate to the Docker Hardened Images registry if the pull fails with `unauthorized`
-   (a free Docker ID is enough): `docker login dhi.io`
-2. Start the server: `docker compose --profile sonar up -d sonar`
-3. Open <http://localhost:9000>, sign in with `admin` / `admin` and change the password.
-4. Generate a token at <http://localhost:9000/account/security> (avatar menu > Account > Security), then
+1. Start the server: `docker compose --profile sonar up -d sonar`
+2. Open <http://localhost:9000>, sign in with `admin` / `admin` and change the password.
+3. Generate a token at <http://localhost:9000/account/security> (avatar menu > Account > Security), then
    `copy .env.example .env` and paste it in.
 
 Run an analysis:
 
 ```
-./scripts/analyze-sonar.ps1
+docker compose --profile sonar run --rm sonar-scan
 ```
 
-The script restores the tools, starts the scanner, builds in Release, runs the unit, integration and specs
-tests with coverage, then completes the analysis and waits for the quality gate. A failing gate makes the
-script exit non-zero. Results are at <http://localhost:9000/dashboard?id=product-management-system>.
+That single command starts `sonar-db` and `sonar` if they are not running, then boots a throwaway container
+built from `Dockerfile.sonarscan`. The image carries the .NET SDK, so **no .NET installation is needed on the
+host** - only Docker. Inside it, the scanner brackets a Release build, runs the unit, integration and specs
+tests with coverage, uploads the result and waits for the quality gate. A failing gate makes the command exit
+non-zero. Results are at <http://localhost:9000/dashboard?id=product-management-system>.
+
+The coverage files land in `backend/TestResults` so they can be inspected locally (for example with Coverage
+Gutters). They are cleared at the start of every run; the analysis history itself lives in the server's
+volumes and is unaffected. To wipe that history too, use `docker compose --profile sonar down -v`.
 
 Coverage comes from Coverlet's Cobertura output. Migrations, `Program.cs` and the model snapshot are excluded.
 
-The image is pinned by tag; tighten it to a digest after pulling:
+Things worth knowing:
 
-```
-docker inspect --format "{{index .RepoDigests 0}}" dhi.io/sonarqube:26-debian-dev
-```
-
-Community Build analyses a single branch and cannot comment on pull requests, so the gate is enforced by
-the script's exit code. New code is defined by number of days, not by a reference branch.
+- The container mounts `/var/run/docker.sock` because the integration tests start their own Postgres container.
+  That is host-root access - acceptable for a local tool, not for a shared runner.
+- Rebuild after code changes: `docker compose --profile sonar run --rm --build sonar-scan`.
+- The image is pinned by digest. To bump it, pull the tag and re-pin:
+  `docker inspect --format "{{index .RepoDigests 0}}" dhi.io/sonarqube:26-debian-dev`
+- Community Build analyses a single branch and cannot comment on pull requests, so the gate is enforced by
+  the command's exit code. New code is defined by number of days, not by a reference branch.
 
 ## Decisions
 
