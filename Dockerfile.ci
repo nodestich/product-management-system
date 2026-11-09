@@ -1,5 +1,8 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0
 
+# Shared CI image: runs the test suites and, via scripts/analyze-sonar.sh, the SonarQube analysis.
+# Both use the same SDK + restored packages, so there is one build and one cache.
+
 # curl is only used to poll the server for readiness.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates \
@@ -27,4 +30,5 @@ COPY scripts/analyze-sonar.sh scripts/
 RUN chmod +x scripts/analyze-sonar.sh
 
 WORKDIR /src/backend
-ENTRYPOINT ["/src/scripts/analyze-sonar.sh"]
+# Neutral entrypoint: callers decide what to run (tests, or scripts/analyze-sonar.sh).
+ENTRYPOINT ["bash"]

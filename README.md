@@ -143,6 +143,38 @@ npm test -- --watch=false
 
 18 unit tests covering the product list (filters, pagination and the re-query after a mutation), both dialog modes and the shell component.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` builds and tests everything **inside Docker images**, so the runner never provides a
+.NET or Node toolchain. It runs on pushes to `feature/ci-cd` and on every pull request.
+
+```
+test ──┬── sonar
+       └── publish   (pushes to feature/ci-cd only)
+```
+
+- **test** - builds `Dockerfile.ci` from the commit and runs `dotnet build` + `dotnet test` in Release inside
+  that image, then uploads the coverage reports as an artifact. The integration and specs tests start their own
+  Postgres container, so `/var/run/docker.sock` is mounted into the test container.
+- **sonar** - starts a throwaway SonarQube (`docker compose --profile sonar`), generates a token for that run,
+  runs `scripts/analyze-sonar.sh` in the same image, and tears everything down. Because the instance is
+  created and destroyed per run there is **no analysis history and no pull-request decoration** - the gate is
+  enforced by the job's exit code.
+- **publish** - builds the Release images and pushes them to GHCR. Pull requests build them but never push.
+
+Image names and tags (deliberately not `latest` while publishing from a feature branch):
+
+```
+ghcr.io/<owner>/product-management-system/api:sha-<short>   and  :feature-ci-cd
+ghcr.io/<owner>/product-management-system/web:sha-<short>   and  :feature-ci-cd
+```
+
+After the first successful push the two packages are **private**; set them to public under
+*Packages -> package -> Package settings* if anonymous pulls are wanted.
+
+To move publishing to the default branch later, change three things in the workflow: `on.push.branches`, the
+`publish` job's `if`, and the tag `feature-ci-cd`.
+
 ## Static analysis
 
 SonarQube Community Build runs locally in Docker behind the `sonar` profile, so a plain `docker compose up`
@@ -162,8 +194,8 @@ docker compose --profile sonar run --rm sonar-scan
 ```
 
 That single command starts `sonar-db` and `sonar` if they are not running, then boots a throwaway container
-built from `Dockerfile.sonarscan`. The image carries the .NET SDK, so **no .NET installation is needed on the
-host** - only Docker. Inside it, the scanner brackets a Release build, runs the unit, integration and specs
+built from `Dockerfile.ci`. The image carries the .NET SDK, so **no .NET installation is needed on the host** -
+only Docker. Inside it, the scanner brackets a Release build, runs the unit, integration and specs
 tests with coverage, uploads the result and waits for the quality gate. A failing gate makes the command exit
 non-zero. Results are at <http://localhost:9000/dashboard?id=product-management-system>.
 

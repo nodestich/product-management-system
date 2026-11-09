@@ -97,7 +97,8 @@ services:
     profiles: [sonar]
     build:
       context: .
-      dockerfile: Dockerfile.sonarscan
+      dockerfile: Dockerfile.ci
+    command: ["/src/scripts/analyze-sonar.sh"]
     environment:
       SONAR_HOST_URL: http://sonar:9000
       SONAR_TOKEN: ${SONAR_TOKEN:-}
