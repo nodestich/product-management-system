@@ -159,7 +159,9 @@ test ──┬── sonar
 - **sonar** - starts a throwaway SonarQube (`docker compose --profile sonar`), generates a token for that run,
   runs `scripts/analyze-sonar.sh` in the same image, and tears everything down. Because the instance is
   created and destroyed per run there is **no analysis history and no pull-request decoration** - the gate is
-  enforced by the job's exit code.
+  enforced by the job's exit code. CI sets `SONAR_IMAGE` to the public upstream image, because `dhi.io`
+  requires `docker login` and a fresh runner has no credentials; both images are SonarQube 26.10.0.133078, so
+  the analysis is identical. Locally the hardened image remains the default.
 - **publish** - builds the Release images and pushes them to GHCR. Pull requests build them but never push.
 
 Image names and tags (deliberately not `latest` while publishing from a feature branch):
@@ -202,6 +204,16 @@ non-zero. Results are at <http://localhost:9000/dashboard?id=product-management-
 The coverage files land in `backend/TestResults` so they can be inspected locally (for example with Coverage
 Gutters). They are cleared at the start of every run; the analysis history itself lives in the server's
 volumes and is unaffected. To wipe that history too, use `docker compose --profile sonar down -v`.
+
+The image is pinned by digest and can be swapped with `SONAR_IMAGE`:
+
+```
+SONAR_IMAGE=sonarqube:26.10.0.133078-community docker compose --profile sonar up -d sonar
+```
+
+`dhi.io` requires `docker login dhi.io` (any free Docker ID), which is why CI overrides the variable with the
+public upstream image. To use the hardened image in CI as well, log in with a token saved as a secret before
+starting the stack.
 
 Coverage comes from Coverlet's Cobertura output. Migrations, `Program.cs` and the model snapshot are excluded.
 

@@ -71,8 +71,9 @@ services:
 
   sonar:
     profiles: [sonar]
-    # Docker Hardened Image, pinned by digest for reproducibility.
-    image: dhi.io/sonarqube:26-debian-dev@sha256:eeb004c6b9160a26b94e0d31ac48919ad7da5401c9b185b02380242dc8355dd5
+    # Defaults to the Docker Hardened Image (pinned by digest). That registry needs
+    # `docker login dhi.io`, so CI overrides SONAR_IMAGE with the public upstream image.
+    image: ${SONAR_IMAGE:-dhi.io/sonarqube:26-debian-dev@sha256:eeb004c6b9160a26b94e0d31ac48919ad7da5401c9b185b02380242dc8355dd5}
     depends_on:
       sonar-db:
         condition: service_healthy

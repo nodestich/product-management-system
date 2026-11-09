@@ -54,6 +54,10 @@ jobs:
     needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      # dhi.io requires authentication, which a fresh runner does not have. The public
+      # upstream image is the same SonarQube version, so the analysis is equivalent.
+      SONAR_IMAGE: sonarqube:26.10.0.133078-community
     steps:
       - uses: actions/checkout@v4
 
