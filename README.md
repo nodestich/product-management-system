@@ -26,6 +26,42 @@ Seed data is inserted the first time the API starts. To reset everything, includ
 ```
 docker compose down -v
 ```
+
+## Run on Kubernetes
+
+The release images are published to `ghcr.io/nodestich/product-management-system/{api,web}`. They are private, and the cluster is never given registry credentials: minikube runs its own container runtime, so the images are pulled on the host, where Docker is already logged in, and handed over with `minikube image load`.
+
+```
+docker pull ghcr.io/nodestich/product-management-system/api:feature-ci-cd
+docker pull ghcr.io/nodestich/product-management-system/web:feature-ci-cd
+minikube image load ghcr.io/nodestich/product-management-system/api:feature-ci-cd
+minikube image load ghcr.io/nodestich/product-management-system/web:feature-ci-cd
+```
+
+If Docker is not logged in to GHCR yet, run `docker login ghcr.io -u <username>` with a token that has the `read:packages` scope.
+
+The chart in [`ops/helm/product-management`](ops/helm/product-management) deploys the compose stack's shape: PostgreSQL on a 1Gi volume, the migrations as an init container, then the API and the web server. The API Service is named `api` because the web image's nginx proxies to `http://api:8080`, so run one release per namespace.
+
+```
+helm install pms ops/helm/product-management --namespace pms --create-namespace
+kubectl -n pms port-forward svc/web 8080:80
+```
+
+The same URLs as compose are then available, seed data and the demo login included, because the API runs with `ASPNETCORE_ENVIRONMENT=Development`.
+
+| URL | |
+| --- | --- |
+| <http://localhost:8080> | Application |
+| <http://localhost:8080/scalar/v1> | Interactive API documentation |
+| <http://localhost:8080/health> | API health, including database connectivity |
+
+After CI publishes a new image, pull and load it again, then `kubectl -n pms rollout restart deploy/pms-product-management-api` (or `deploy/pms-product-management-web`). To reset everything, including the database volume:
+
+```
+helm uninstall pms --namespace pms
+kubectl delete namespace pms
+```
+
 ## Requirements
 
 - .NET SDK 10.0
@@ -142,6 +178,90 @@ npm test -- --watch=false
 ```
 
 18 unit tests covering the product list (filters, pagination and the re-query after a mutation), both dialog modes and the shell component.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` builds and tests everything **inside Docker images**, so the runner never provides a
+.NET or Node toolchain. It runs on pushes to `feature/ci-cd` and on every pull request.
+
+```
+test ──┬── sonar
+       └── publish   (pushes to feature/ci-cd only)
+```
+
+- **test** - builds `Dockerfile.ci` from the commit and runs `dotnet build` + `dotnet test` in Release inside
+  that image, then uploads the coverage reports as an artifact. The integration and specs tests start their own
+  Postgres container, so `/var/run/docker.sock` is mounted into the test container.
+- **sonar** - starts a throwaway SonarQube (`docker compose --profile sonar`), generates a token for that run,
+  runs `scripts/analyze-sonar.sh` in the same image, and tears everything down. Because the instance is
+  created and destroyed per run there is **no analysis history and no pull-request decoration** - the gate is
+  enforced by the job's exit code. CI sets `SONAR_IMAGE` to the public upstream image, because `dhi.io`
+  requires `docker login` and a fresh runner has no credentials; both images are SonarQube 26.10.0.133078, so
+  the analysis is identical. Locally the hardened image remains the default.
+- **publish** - builds the Release images and pushes them to GHCR. Pull requests build them but never push.
+
+Image names and tags (deliberately not `latest` while publishing from a feature branch):
+
+```
+ghcr.io/<owner>/product-management-system/api:sha-<short>   and  :feature-ci-cd
+ghcr.io/<owner>/product-management-system/web:sha-<short>   and  :feature-ci-cd
+```
+
+After the first successful push the two packages are **private**; set them to public under
+*Packages -> package -> Package settings* if anonymous pulls are wanted.
+
+To move publishing to the default branch later, change three things in the workflow: `on.push.branches`, the
+`publish` job's `if`, and the tag `feature-ci-cd`.
+
+## Static analysis
+
+SonarQube Community Build runs locally in Docker behind the `sonar` profile, so a plain `docker compose up`
+is unaffected.
+
+One-time setup:
+
+1. Start the server: `docker compose --profile sonar up -d sonar`
+2. Open <http://localhost:9000>, sign in with `admin` / `admin` and change the password.
+3. Generate a token at <http://localhost:9000/account/security> (avatar menu > Account > Security), then
+   `copy .env.example .env` and paste it in.
+
+Run an analysis:
+
+```
+docker compose --profile sonar run --rm sonar-scan
+```
+
+That single command starts `sonar-db` and `sonar` if they are not running, then boots a throwaway container
+built from `Dockerfile.ci`. The image carries the .NET SDK, so **no .NET installation is needed on the host** -
+only Docker. Inside it, the scanner brackets a Release build, runs the unit, integration and specs
+tests with coverage, uploads the result and waits for the quality gate. A failing gate makes the command exit
+non-zero. Results are at <http://localhost:9000/dashboard?id=product-management-system>.
+
+The coverage files land in `backend/TestResults` so they can be inspected locally (for example with Coverage
+Gutters). They are cleared at the start of every run; the analysis history itself lives in the server's
+volumes and is unaffected. To wipe that history too, use `docker compose --profile sonar down -v`.
+
+The image is pinned by digest and can be swapped with `SONAR_IMAGE`:
+
+```
+SONAR_IMAGE=sonarqube:26.10.0.133078-community docker compose --profile sonar up -d sonar
+```
+
+`dhi.io` requires `docker login dhi.io` (any free Docker ID), which is why CI overrides the variable with the
+public upstream image. To use the hardened image in CI as well, log in with a token saved as a secret before
+starting the stack.
+
+Coverage comes from Coverlet's Cobertura output. Migrations, `Program.cs` and the model snapshot are excluded.
+
+Things worth knowing:
+
+- The container mounts `/var/run/docker.sock` because the integration tests start their own Postgres container.
+  That is host-root access - acceptable for a local tool, not for a shared runner.
+- Rebuild after code changes: `docker compose --profile sonar run --rm --build sonar-scan`.
+- The image is pinned by digest. To bump it, pull the tag and re-pin:
+  `docker inspect --format "{{index .RepoDigests 0}}" dhi.io/sonarqube:26-debian-dev`
+- Community Build analyses a single branch and cannot comment on pull requests, so the gate is enforced by
+  the command's exit code. New code is defined by number of days, not by a reference branch.
 
 ## Decisions
 

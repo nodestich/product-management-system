@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pms.fullname" . }}-api
+  labels:
+    {{- include "pms.labels" (dict "root" . "component" "api") | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "pms.selectorLabels" (dict "root" . "component" "api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pms.labels" (dict "root" . "component" "api") | nindent 8 }}
+      annotations:
+        {{- if not .Values.postgres.existingSecret }}
+        # Restart the API when the generated credentials change.
+        checksum/db-secret: {{ include (print $.Template.BasePath "/postgres-secret.yaml") . | sha256sum }}
+        {{- end }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ .Values.postgres.image | quote }}
+          # The pod forbids root; pg_isready needs no privileges, so run it as postgres (uid 70 in alpine).
+          securityContext:
+            runAsUser: 70
+            runAsGroup: 70
+          command:
+            - sh
+            - -c
+            - until pg_isready -h {{ include "pms.postgresHost" . }} -U {{ .Values.postgres.username }} -d {{ .Values.postgres.database }}; do sleep 2; done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+        {{- if .Values.migrations.enabled }}
+        - name: migrate
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          args: ["--migrate"]
+          env:
+            - name: ConnectionStrings__Default
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pms.postgresSecretName" . }}
+                  key: ConnectionStrings__Default
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+        {{- end }}
+      containers:
+        - name: api
+          image: "{{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}"
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          # The image sets ASPNETCORE_URLS=http://+:8080.
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: {{ .Values.api.environment | quote }}
+            - name: ConnectionStrings__Default
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "pms.postgresSecretName" . }}
+                  key: ConnectionStrings__Default
+          # /health includes the database check, so it is the readiness signal only.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}

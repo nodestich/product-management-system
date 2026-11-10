@@ -1,0 +1,34 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0
+
+# Shared CI image: runs the test suites and, via scripts/analyze-sonar.sh, the SonarQube analysis.
+# Both use the same SDK + restored packages, so there is one build and one cache.
+
+# curl is only used to poll the server for readiness.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY global.json Directory.Build.props .editorconfig ./
+COPY backend/ProductManagement.sln backend/
+COPY backend/.config/dotnet-tools.json backend/.config/
+COPY backend/src/ProductManagement.Domain/ProductManagement.Domain.csproj backend/src/ProductManagement.Domain/
+COPY backend/src/ProductManagement.Application/ProductManagement.Application.csproj backend/src/ProductManagement.Application/
+COPY backend/src/ProductManagement.Infrastructure/ProductManagement.Infrastructure.csproj backend/src/ProductManagement.Infrastructure/
+COPY backend/src/ProductManagement.Api/ProductManagement.Api.csproj backend/src/ProductManagement.Api/
+COPY backend/tests/ProductManagement.UnitTests/ProductManagement.UnitTests.csproj backend/tests/ProductManagement.UnitTests/
+COPY backend/tests/ProductManagement.IntegrationTests/ProductManagement.IntegrationTests.csproj backend/tests/ProductManagement.IntegrationTests/
+COPY backend/tests/ProductManagement.Specs/ProductManagement.Specs.csproj backend/tests/ProductManagement.Specs/
+
+RUN dotnet restore backend/ProductManagement.sln
+
+# Restore the pinned local tools at build time so runs need no downloads.
+RUN cd backend && dotnet tool restore
+
+COPY backend/ backend/
+COPY scripts/analyze-sonar.sh scripts/
+RUN chmod +x scripts/analyze-sonar.sh
+
+WORKDIR /src/backend
+# Neutral entrypoint: callers decide what to run (tests, or scripts/analyze-sonar.sh).
+ENTRYPOINT ["bash"]

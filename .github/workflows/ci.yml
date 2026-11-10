@@ -1,0 +1,136 @@
+name: CI
+
+on:
+  push:
+    branches: [feature/ci-cd] # move to master once the pipeline is trusted
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI_IMAGE: pms-ci:${{ github.sha }}
+
+jobs:
+  # Everything runs inside an image built from this commit, never on runner-provided toolchains.
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the CI image
+        run: docker build -f Dockerfile.ci -t "$CI_IMAGE" .
+
+      - name: Build and test inside the image
+        run: |
+          docker run --rm \
+            --add-host=host.docker.internal:host-gateway \
+            -e TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/backend/TestResults:/src/backend/TestResults" \
+            "$CI_IMAGE" -c '
+              dotnet build ProductManagement.sln --configuration Release --no-restore &&
+              dotnet test ProductManagement.sln --configuration Release --no-build \
+                --collect:"XPlat Code Coverage" \
+                --results-directory /src/backend/TestResults
+            '
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: backend/TestResults
+          if-no-files-found: warn
+
+  # Throwaway SonarQube: the token is generated at runtime, so no repository secret is needed.
+  # The instance is destroyed afterwards, so there is no history and no pull-request decoration.
+  sonar:
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # dhi.io requires authentication, which a fresh runner does not have. The public
+      # upstream image is the same SonarQube version, so the analysis is equivalent.
+      SONAR_IMAGE: sonarqube:26.10.0.133078-community
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Raise vm.max_map_count for SonarQube's search engine
+        run: sudo sysctl -w vm.max_map_count=524288
+
+      - name: Start SonarQube
+        run: docker compose --profile sonar up -d sonar-db sonar
+
+      - name: Wait for SonarQube
+        run: |
+          for attempt in $(seq 1 60); do
+            status=$(curl -fsS http://localhost:9000/api/system/status 2>/dev/null | jq -r .status || true)
+            if [ "$status" = "UP" ]; then
+              exit 0
+            fi
+            echo "status: ${status:-unreachable} ($attempt/60)"
+            sleep 5
+          done
+          echo "SonarQube never became reachable" >&2
+          docker compose --profile sonar logs sonar
+          exit 1
+
+      - name: Generate a token for this run
+        run: |
+          token=$(curl -fsS -u admin:admin -X POST \
+            "http://localhost:9000/api/user_tokens/generate?name=ci-${GITHUB_RUN_ID}" | jq -r .token)
+          if [ -z "$token" ] || [ "$token" = "null" ]; then
+            echo "Could not generate a SonarQube token" >&2
+            exit 1
+          fi
+          echo "::add-mask::$token"
+          echo "SONAR_TOKEN=$token" >> "$GITHUB_ENV"
+
+      - name: Run the analysis
+        run: docker compose --profile sonar run --rm sonar-scan
+
+      - name: Stop SonarQube
+        if: always()
+        run: docker compose --profile sonar down -v
+
+  # Release images: pull requests build them to prove they compile, only a push publishes.
+  publish:
+    needs: [test, sonar]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/ci-cd'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build the images
+        run: |
+          short_sha="${GITHUB_SHA::7}"
+          api="ghcr.io/${GITHUB_REPOSITORY}/api"
+          web="ghcr.io/${GITHUB_REPOSITORY}/web"
+
+          docker build -f backend/src/ProductManagement.Api/Dockerfile \
+            -t "$api:sha-$short_sha" -t "$api:feature-ci-cd" .
+          docker build -t "$web:sha-$short_sha" -t "$web:feature-ci-cd" frontend
+
+      - name: Push the images
+        run: |
+          short_sha="${GITHUB_SHA::7}"
+          for image in api web; do
+            docker push "ghcr.io/${GITHUB_REPOSITORY}/${image}:sha-$short_sha"
+            docker push "ghcr.io/${GITHUB_REPOSITORY}/${image}:feature-ci-cd"
+          done

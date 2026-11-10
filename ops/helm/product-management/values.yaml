@@ -1,0 +1,63 @@
+# The two application images are published by CI to GHCR and are private. minikube pulls
+# them on the host and loads them into its own runtime, so the cluster never needs registry
+# credentials and the pull policy stays IfNotPresent.
+api:
+  replicaCount: 1
+  # Development keeps the seed data, the demo login and the API docs, as docker-compose does.
+  environment: Development
+  image:
+    repository: ghcr.io/nodestich/product-management-system/api
+    tag: feature-ci-cd
+    pullPolicy: IfNotPresent
+  service:
+    # The web image's nginx proxies to http://api:8080, so this name cannot change without
+    # rebuilding the frontend image. That means one release per namespace.
+    name: api
+    port: 8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 192Mi
+    limits:
+      memory: 512Mi
+
+web:
+  replicaCount: 1
+  image:
+    repository: ghcr.io/nodestich/product-management-system/web
+    tag: feature-ci-cd
+    pullPolicy: IfNotPresent
+  service:
+    name: web
+    port: 80
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+
+postgres:
+  image: postgres:16-alpine
+  database: productmanagement
+  username: postgres
+  # Development credential, identical to docker-compose.yaml. Use existingSecret elsewhere.
+  password: postgres
+  # Name of a secret holding POSTGRES_PASSWORD and ConnectionStrings__Default. When set,
+  # no secret is created and the credentials above are ignored.
+  existingSecret: ""
+  persistence:
+    size: 1Gi
+    # Empty means the cluster default StorageClass.
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+migrations:
+  # Runs the API's --migrate mode as an init container. With more than one API replica the
+  # migrations would race, which is why api.replicaCount defaults to 1.
+  enabled: true

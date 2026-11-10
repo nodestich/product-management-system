@@ -1,0 +1,23 @@
+The product management system is deployed in namespace {{ .Release.Namespace }}.
+
+Reach it with:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Values.web.service.name }} 8080:{{ .Values.web.service.port }}
+
+  http://localhost:8080             application
+  http://localhost:8080/scalar/v1   API documentation
+  http://localhost:8080/health      API health, database included
+
+The images are private and are not pulled by the cluster. Load them first, for example:
+
+  docker pull {{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}
+  docker pull {{ .Values.web.image.repository }}:{{ .Values.web.image.tag }}
+  minikube image load {{ .Values.api.image.repository }}:{{ .Values.api.image.tag }}
+  minikube image load {{ .Values.web.image.repository }}:{{ .Values.web.image.tag }}
+
+{{ if .Values.migrations.enabled -}}
+Schema migrations run as an init container of the api pod, so keep api.replicaCount at 1.
+{{ end }}
+{{ if eq .Values.api.environment "Development" -}}
+Seed data and the demo login (admin@example.com) are created on the first API start.
+{{ end }}
