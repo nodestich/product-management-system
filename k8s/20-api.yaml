@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: pms
+spec:
+  # Migrations run from an init container, so they are only concurrency-safe with one replica.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          # The pod forbids root; pg_isready needs no privileges, so run it as postgres (uid 70 in alpine).
+          securityContext:
+            runAsUser: 70
+            runAsGroup: 70
+          command:
+            - sh
+            - -c
+            - until pg_isready -h postgres -U postgres -d productmanagement; do sleep 2; done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+        # Same one-shot mode the compose "migrate" service uses.
+        - name: migrate
+          image: ghcr.io/nodestich/product-management-system/api:feature-ci-cd
+          imagePullPolicy: IfNotPresent
+          args: ["--migrate"]
+          env:
+            - name: ConnectionStrings__Default
+              valueFrom:
+                secretKeyRef:
+                  name: pms-db
+                  key: ConnectionStrings__Default
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+      containers:
+        - name: api
+          image: ghcr.io/nodestich/product-management-system/api:feature-ci-cd
+          # The tag is moved by every CI build, but the image is loaded into minikube by hand.
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # Development keeps the seed data, the demo login and the API docs, as with compose.
+            - name: ASPNETCORE_ENVIRONMENT
+              value: Development
+            - name: ConnectionStrings__Default
+              valueFrom:
+                secretKeyRef:
+                  name: pms-db
+                  key: ConnectionStrings__Default
+          # /health includes the database check, so it is the readiness signal only.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 192Mi
+            limits:
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+  namespace: pms
+spec:
+  selector:
+    app: api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

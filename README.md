@@ -26,6 +26,42 @@ Seed data is inserted the first time the API starts. To reset everything, includ
 ```
 docker compose down -v
 ```
+
+## Run on Kubernetes
+
+The release images are published to `ghcr.io/nodestich/product-management-system/{api,web}`. They are private, and the cluster is never given registry credentials: minikube runs its own container runtime, so the images are pulled on the host, where Docker is already logged in, and handed over with `minikube image load`.
+
+```
+docker pull ghcr.io/nodestich/product-management-system/api:feature-ci-cd
+docker pull ghcr.io/nodestich/product-management-system/web:feature-ci-cd
+minikube image load ghcr.io/nodestich/product-management-system/api:feature-ci-cd
+minikube image load ghcr.io/nodestich/product-management-system/web:feature-ci-cd
+```
+
+If Docker is not logged in to GHCR yet, run `docker login ghcr.io -u <username>` with a token that has the `read:packages` scope.
+
+The manifests in [`k8s/`](k8s/) mirror the compose stack: PostgreSQL with a 1Gi volume, the migrations as an init container, and the same ports. The API Service is named `api` because the web image's nginx proxies to `http://api:8080`; renaming it breaks the frontend.
+
+```
+kubectl apply -f k8s/
+kubectl -n pms rollout status deploy/api
+kubectl -n pms port-forward svc/web 8080:80
+```
+
+The same URLs as compose are then available, seed data and the demo login included, because the API runs with `ASPNETCORE_ENVIRONMENT=Development`.
+
+| URL | |
+| --- | --- |
+| <http://localhost:8080> | Application |
+| <http://localhost:8080/scalar/v1> | Interactive API documentation |
+| <http://localhost:8080/health> | API health, including database connectivity |
+
+After CI publishes a new image, pull and load it again, then `kubectl -n pms rollout restart deploy/api` (or `deploy/web`). To reset everything, including the database volume:
+
+```
+kubectl delete namespace pms
+```
+
 ## Requirements
 
 - .NET SDK 10.0

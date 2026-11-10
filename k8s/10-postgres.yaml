@@ -1,0 +1,90 @@
+# Local-development credentials, identical to the ones docker-compose.yaml uses.
+# A real deployment supplies these from outside the repository.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pms-db
+  namespace: pms
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: postgres
+  ConnectionStrings__Default: Host=postgres;Port=5432;Database=productmanagement;Username=postgres;Password=postgres
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: pms
+spec:
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: pms
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      # The postgres image runs as uid/gid 999; fsGroup makes the volume writable for it.
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - name: postgres
+              containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: productmanagement
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: pms-db
+                  key: POSTGRES_PASSWORD
+            # A subdirectory keeps initdb away from the volume's lost+found.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "productmanagement"]
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "productmanagement"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
