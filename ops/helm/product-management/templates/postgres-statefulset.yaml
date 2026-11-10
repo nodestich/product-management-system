@@ -1,63 +1,38 @@
-# Local-development credentials, identical to the ones docker-compose.yaml uses.
-# A real deployment supplies these from outside the repository.
-apiVersion: v1
-kind: Secret
-metadata:
-  name: pms-db
-  namespace: pms
-type: Opaque
-stringData:
-  POSTGRES_PASSWORD: postgres
-  ConnectionStrings__Default: Host=postgres;Port=5432;Database=productmanagement;Username=postgres;Password=postgres
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: postgres
-  namespace: pms
-spec:
-  clusterIP: None
-  selector:
-    app: postgres
-  ports:
-    - name: postgres
-      port: 5432
-      targetPort: postgres
----
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: postgres
-  namespace: pms
+  name: {{ include "pms.postgresHost" . }}
+  labels:
+    {{- include "pms.labels" (dict "root" . "component" "postgres") | nindent 4 }}
 spec:
-  serviceName: postgres
+  serviceName: {{ include "pms.postgresHost" . }}
   replicas: 1
   selector:
     matchLabels:
-      app: postgres
+      {{- include "pms.selectorLabels" (dict "root" . "component" "postgres") | nindent 6 }}
   template:
     metadata:
       labels:
-        app: postgres
+        {{- include "pms.labels" (dict "root" . "component" "postgres") | nindent 8 }}
     spec:
       # The postgres image runs as uid/gid 999; fsGroup makes the volume writable for it.
       securityContext:
         fsGroup: 999
       containers:
         - name: postgres
-          image: postgres:16-alpine
+          image: {{ .Values.postgres.image | quote }}
           ports:
             - name: postgres
               containerPort: 5432
           env:
             - name: POSTGRES_DB
-              value: productmanagement
+              value: {{ .Values.postgres.database | quote }}
             - name: POSTGRES_USER
-              value: postgres
+              value: {{ .Values.postgres.username | quote }}
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: pms-db
+                  name: {{ include "pms.postgresSecretName" . }}
                   key: POSTGRES_PASSWORD
             # A subdirectory keeps initdb away from the volume's lost+found.
             - name: PGDATA
@@ -67,24 +42,23 @@ spec:
               mountPath: /var/lib/postgresql/data
           readinessProbe:
             exec:
-              command: ["pg_isready", "-U", "postgres", "-d", "productmanagement"]
+              command: ["pg_isready", "-U", {{ .Values.postgres.username | quote }}, "-d", {{ .Values.postgres.database | quote }}]
             periodSeconds: 5
           livenessProbe:
             exec:
-              command: ["pg_isready", "-U", "postgres", "-d", "productmanagement"]
+              command: ["pg_isready", "-U", {{ .Values.postgres.username | quote }}, "-d", {{ .Values.postgres.database | quote }}]
             initialDelaySeconds: 30
             periodSeconds: 10
           resources:
-            requests:
-              cpu: 100m
-              memory: 128Mi
-            limits:
-              memory: 512Mi
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
   volumeClaimTemplates:
     - metadata:
         name: data
       spec:
         accessModes: ["ReadWriteOnce"]
+        {{- with .Values.postgres.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
         resources:
           requests:
-            storage: 1Gi
+            storage: {{ .Values.postgres.persistence.size }}

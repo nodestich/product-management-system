@@ -40,11 +40,10 @@ minikube image load ghcr.io/nodestich/product-management-system/web:feature-ci-c
 
 If Docker is not logged in to GHCR yet, run `docker login ghcr.io -u <username>` with a token that has the `read:packages` scope.
 
-The manifests in [`k8s/`](k8s/) mirror the compose stack: PostgreSQL with a 1Gi volume, the migrations as an init container, and the same ports. The API Service is named `api` because the web image's nginx proxies to `http://api:8080`; renaming it breaks the frontend.
+The chart in [`ops/helm/product-management`](ops/helm/product-management) deploys the compose stack's shape: PostgreSQL on a 1Gi volume, the migrations as an init container, then the API and the web server. The API Service is named `api` because the web image's nginx proxies to `http://api:8080`, so run one release per namespace.
 
 ```
-kubectl apply -f k8s/
-kubectl -n pms rollout status deploy/api
+helm install pms ops/helm/product-management --namespace pms --create-namespace
 kubectl -n pms port-forward svc/web 8080:80
 ```
 
@@ -56,9 +55,10 @@ The same URLs as compose are then available, seed data and the demo login includ
 | <http://localhost:8080/scalar/v1> | Interactive API documentation |
 | <http://localhost:8080/health> | API health, including database connectivity |
 
-After CI publishes a new image, pull and load it again, then `kubectl -n pms rollout restart deploy/api` (or `deploy/web`). To reset everything, including the database volume:
+After CI publishes a new image, pull and load it again, then `kubectl -n pms rollout restart deploy/pms-product-management-api` (or `deploy/pms-product-management-web`). To reset everything, including the database volume:
 
 ```
+helm uninstall pms --namespace pms
 kubectl delete namespace pms
 ```
 
