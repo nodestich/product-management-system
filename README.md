@@ -141,28 +141,54 @@ cd frontend
 npm test -- --watch=false
 ```
 
-18 unit tests covering the product list (filters, pagination and the re-query after a mutation), both dialog modes and the shell component.
+22 unit tests covering the product list (filters, pagination and the re-query after a mutation), both dialog modes and the shell component. CI runs the same command whenever something under `frontend/` changes.
 
 ## Continuous integration
 
 `.github/workflows/ci.yml` builds and tests everything **inside Docker images**, so the runner never provides a
 .NET or Node toolchain. It runs on pushes to `feature/ci-cd` and on every pull request.
 
+Every job is gated on what actually changed, so a frontend-only commit does not rebuild the API or re-run the
+backend suite, and the reverse.
+
 ```
-test ──┬── sonar
-       └── publish   (pushes to feature/ci-cd only)
+changes ─┬─ test-api ── sonar ─┐
+         └─ test-web ──────────┴─ publish   (pushes to feature/ci-cd only)
 ```
 
-- **test** - builds `Dockerfile.ci` from the commit and runs `dotnet build` + `dotnet test` in Release inside
-  that image, then uploads the coverage reports as an artifact. The integration and specs tests start their own
-  Postgres container, so `/var/run/docker.sock` is mounted into the test container.
-- **sonar** - starts a throwaway SonarQube (`docker compose --profile sonar`), generates a token for that run,
+- **changes** - diffs the push against the commit it started from (or the pull request against its base) and
+  exposes the three outputs below. A force push or a new branch resolves to the root commit, so everything counts
+  as changed.
+- **test-api** (`backend`) - builds `Dockerfile.ci` from the commit and runs `dotnet build` + `dotnet test` in
+  Release inside that image, then uploads the coverage reports as an artifact. The integration and specs tests
+  start their own Postgres container, so `/var/run/docker.sock` is mounted into the test container.
+- **test-web** (`frontend`) - `npm ci` + `ng test` in `node:22-alpine`. The suite is vitest with jsdom, so it
+  needs no browser and no host toolchain.
+- **sonar** - runs only when `test-api` ran, because the backend analysis of unchanged code is identical. It starts
+  a throwaway SonarQube (`docker compose --profile sonar`), generates a token for that run,
   runs `scripts/analyze-sonar.sh` in the same image, and tears everything down. Because the instance is
   created and destroyed per run there is **no analysis history and no pull-request decoration** - the gate is
   enforced by the job's exit code. CI sets `SONAR_IMAGE` to the public upstream image, because `dhi.io`
   requires `docker login` and a fresh runner has no credentials; both images are SonarQube 26.10.0.133078, so
   the analysis is identical. Locally the hardened image remains the default.
-- **publish** - builds the Release images and pushes them to GHCR. Pull requests build them but never push.
+- **publish** (`api` or `web`) - builds and pushes only the images whose inputs changed, and skips an image whose
+  `sha-<short>` tag is already in the registry, which is the case when the same commit is run again. Pull requests
+  never reach it.
+
+Which paths drive which output:
+
+| Output | Paths | Gates |
+| --- | --- | --- |
+| `backend` | `backend/**`, `global.json`, `Directory.Build.props`, `.editorconfig`, `Dockerfile.ci`, `scripts/**` | `test-api`, `sonar` |
+| `api` | `backend/**`, `global.json`, `Directory.Build.props`, `.dockerignore` | the API image |
+| `web` | `frontend/**` | `test-web`, the web image |
+
+`backend` is wider than `api` on purpose: `.editorconfig` drives the analyzers under `EnforceCodeStyleInBuild`,
+and `Dockerfile.ci` and `scripts/` shape the test and scanner environments; none of them reach a published image.
+`.dockerignore` only matters to the API image, whose build context is the repository root.
+
+A push that only touches Markdown (`paths-ignore`) skips the workflow entirely. Pull requests are never filtered,
+but the same `changes` gate applies to them.
 
 Image names and tags (deliberately not `latest` while publishing from a feature branch):
 
@@ -170,6 +196,9 @@ Image names and tags (deliberately not `latest` while publishing from a feature 
 ghcr.io/<owner>/product-management-system/api:sha-<short>   and  :feature-ci-cd
 ghcr.io/<owner>/product-management-system/web:sha-<short>   and  :feature-ci-cd
 ```
+
+An image that did not change keeps its previous tags, so each `feature-ci-cd` tag always points at the newest
+commit that actually affected that image.
 
 After the first successful push the two packages are **private**; set them to public under
 *Packages -> package -> Package settings* if anonymous pulls are wanted.

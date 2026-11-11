@@ -3,6 +3,9 @@ name: CI
 on:
   push:
     branches: [feature/ci-cd] # move to master once the pipeline is trusted
+    # Documentation-only pushes cannot change a job outcome. Pull requests are never filtered.
+    paths-ignore:
+      - '**.md'
   pull_request:
 
 permissions:
@@ -16,8 +19,46 @@ env:
   CI_IMAGE: pms-ci:${{ github.sha }}
 
 jobs:
+  # Decides which side changed, so the other side's jobs can be skipped.
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      # Everything that can change the backend build, the tests or the analysis.
+      backend: ${{ steps.diff.outputs.backend }}
+      # The inputs of the published API image (wider on .dockerignore, narrower on test tooling).
+      api: ${{ steps.diff.outputs.api }}
+      # The inputs of the published web image.
+      web: ${{ steps.diff.outputs.web }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the diff base must exist locally
+
+      - name: Diff against the base of this change
+        id: diff
+        run: |
+          if [ '${{ github.event_name }}' = 'pull_request' ]; then
+            base='${{ github.event.pull_request.base.sha }}'
+          else
+            base='${{ github.event.before }}'
+          fi
+          # A new branch, a force push or a base outside the clone has no usable parent commit.
+          git cat-file -e "${base}^{commit}" 2>/dev/null || base=$(git rev-list --max-parents=0 HEAD | tail -1)
+          files=$(git diff --name-only "$base" HEAD)
+          echo "$files"
+          flag() {
+            if grep -Eq "$2" <<<"$files"; then value=true; else value=false; fi
+            echo "$1=$value" >> "$GITHUB_OUTPUT"
+          }
+          flag backend '^(backend/|global\.json$|Directory\.Build\.props$|\.editorconfig$|Dockerfile\.ci$|scripts/)'
+          flag api     '^(backend/|global\.json$|Directory\.Build\.props$|\.dockerignore$)'
+          flag web     '^frontend/'
+
   # Everything runs inside an image built from this commit, never on runner-provided toolchains.
-  test:
+  test-api:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -48,10 +89,25 @@ jobs:
           path: backend/TestResults
           if-no-files-found: warn
 
+  # The frontend suite needs no browser (vitest + jsdom), so the official Node image is enough.
+  test-web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the unit tests
+        run: |
+          docker run --rm -e CI=true \
+            -v "$PWD/frontend:/app" -w /app \
+            node:22-alpine sh -c 'npm ci && npx ng test --watch=false'
+
   # Throwaway SonarQube: the token is generated at runtime, so no repository secret is needed.
   # The instance is destroyed afterwards, so there is no history and no pull-request decoration.
   sonar:
-    needs: test
+    needs: [changes, test-api] # a skipped test-api skips the analysis of unchanged backend code
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -99,10 +155,16 @@ jobs:
         if: always()
         run: docker compose --profile sonar down -v
 
-  # Release images: pull requests build them to prove they compile, only a push publishes.
+  # Release images: only a push publishes, and only the images whose inputs changed.
   publish:
-    needs: [test, sonar]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/ci-cd'
+    needs: [changes, test-api, test-web, sonar]
+    # The test jobs are skipped for a one-sided change, so a plain needs gate would never be satisfied.
+    if: |
+      always() &&
+      github.event_name == 'push' && github.ref == 'refs/heads/feature/ci-cd' &&
+      needs.changes.result == 'success' &&
+      (needs.changes.outputs.api == 'true' || needs.changes.outputs.web == 'true') &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -117,20 +179,34 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build the images
+      # A sha tag already in the registry means this commit was published by an earlier run.
+      - name: Plan the release
+        id: plan
         run: |
           short_sha="${GITHUB_SHA::7}"
-          api="ghcr.io/${GITHUB_REPOSITORY}/api"
-          web="ghcr.io/${GITHUB_REPOSITORY}/web"
+          published() {
+            docker manifest inspect "ghcr.io/${GITHUB_REPOSITORY}/$1:sha-$short_sha" >/dev/null 2>&1
+          }
+          api='${{ needs.changes.outputs.api }}'
+          web='${{ needs.changes.outputs.web }}'
+          echo "api=$([ "$api" = true ] && ! published api && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "web=$([ "$web" = true ] && ! published web && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
+      - name: Build and push the API image
+        if: steps.plan.outputs.api == 'true'
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY}/api"
+          short_sha="${GITHUB_SHA::7}"
           docker build -f backend/src/ProductManagement.Api/Dockerfile \
-            -t "$api:sha-$short_sha" -t "$api:feature-ci-cd" .
-          docker build -t "$web:sha-$short_sha" -t "$web:feature-ci-cd" frontend
+            -t "$image:sha-$short_sha" -t "$image:feature-ci-cd" .
+          docker push "$image:sha-$short_sha"
+          docker push "$image:feature-ci-cd"
 
-      - name: Push the images
+      - name: Build and push the web image
+        if: steps.plan.outputs.web == 'true'
         run: |
+          image="ghcr.io/${GITHUB_REPOSITORY}/web"
           short_sha="${GITHUB_SHA::7}"
-          for image in api web; do
-            docker push "ghcr.io/${GITHUB_REPOSITORY}/${image}:sha-$short_sha"
-            docker push "ghcr.io/${GITHUB_REPOSITORY}/${image}:feature-ci-cd"
-          done
+          docker build -t "$image:sha-$short_sha" -t "$image:feature-ci-cd" frontend
+          docker push "$image:sha-$short_sha"
+          docker push "$image:feature-ci-cd"
