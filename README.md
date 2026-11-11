@@ -141,7 +141,120 @@ cd frontend
 npm test -- --watch=false
 ```
 
-18 unit tests covering the product list (filters, pagination and the re-query after a mutation), both dialog modes and the shell component.
+22 unit tests covering the product list (filters, pagination and the re-query after a mutation), both dialog modes and the shell component. CI runs the same command whenever something under `frontend/` changes.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` builds and tests everything **inside Docker images**, so the runner never provides a
+.NET or Node toolchain. It runs on pushes to `feature/ci-cd` and on every pull request.
+
+Every job is gated on what actually changed, so a frontend-only commit does not rebuild the API or re-run the
+backend suite, and the reverse.
+
+```
+changes ─┬─ test-api ── sonar ─┐
+         └─ test-web ──────────┴─ publish   (pushes to feature/ci-cd only)
+```
+
+- **changes** - diffs the push against the commit it started from (or the pull request against its base) and
+  exposes the three outputs below. A force push or a new branch resolves to the root commit, so everything counts
+  as changed.
+- **test-api** (`backend`) - builds `Dockerfile.ci` from the commit and runs `dotnet build` + `dotnet test` in
+  Release inside that image, then uploads the coverage reports as an artifact. The integration and specs tests
+  start their own Postgres container, so `/var/run/docker.sock` is mounted into the test container.
+- **test-web** (`frontend`) - `npm ci` + `ng test` in `node:22-alpine`. The suite is vitest with jsdom, so it
+  needs no browser and no host toolchain.
+- **sonar** - runs only when `test-api` ran, because the backend analysis of unchanged code is identical. It starts
+  a throwaway SonarQube (`docker compose --profile sonar`), generates a token for that run,
+  runs `scripts/analyze-sonar.sh` in the same image, and tears everything down. Because the instance is
+  created and destroyed per run there is **no analysis history and no pull-request decoration** - the gate is
+  enforced by the job's exit code. CI sets `SONAR_IMAGE` to the public upstream image, because `dhi.io`
+  requires `docker login` and a fresh runner has no credentials; both images are SonarQube 26.10.0.133078, so
+  the analysis is identical. Locally the hardened image remains the default.
+- **publish** (`api` or `web`) - builds and pushes only the images whose inputs changed, and skips an image whose
+  `sha-<short>` tag is already in the registry, which is the case when the same commit is run again. Pull requests
+  never reach it.
+
+Which paths drive which output:
+
+| Output | Paths | Gates |
+| --- | --- | --- |
+| `backend` | `backend/**`, `global.json`, `Directory.Build.props`, `.editorconfig`, `Dockerfile.ci`, `scripts/**` | `test-api`, `sonar` |
+| `api` | `backend/**`, `global.json`, `Directory.Build.props`, `.dockerignore` | the API image |
+| `web` | `frontend/**` | `test-web`, the web image |
+
+`backend` is wider than `api` on purpose: `.editorconfig` drives the analyzers under `EnforceCodeStyleInBuild`,
+and `Dockerfile.ci` and `scripts/` shape the test and scanner environments; none of them reach a published image.
+`.dockerignore` only matters to the API image, whose build context is the repository root.
+
+A push that only touches Markdown (`paths-ignore`) skips the workflow entirely. Pull requests are never filtered,
+but the same `changes` gate applies to them.
+
+Image names and tags (deliberately not `latest` while publishing from a feature branch):
+
+```
+ghcr.io/<owner>/product-management-system/api:sha-<short>   and  :feature-ci-cd
+ghcr.io/<owner>/product-management-system/web:sha-<short>   and  :feature-ci-cd
+```
+
+An image that did not change keeps its previous tags, so each `feature-ci-cd` tag always points at the newest
+commit that actually affected that image.
+
+After the first successful push the two packages are **private**; set them to public under
+*Packages -> package -> Package settings* if anonymous pulls are wanted.
+
+To move publishing to the default branch later, change three things in the workflow: `on.push.branches`, the
+`publish` job's `if`, and the tag `feature-ci-cd`.
+
+## Static analysis
+
+SonarQube Community Build runs locally in Docker behind the `sonar` profile, so a plain `docker compose up`
+is unaffected.
+
+One-time setup:
+
+1. Start the server: `docker compose --profile sonar up -d sonar`
+2. Open <http://localhost:9000>, sign in with `admin` / `admin` and change the password.
+3. Generate a token at <http://localhost:9000/account/security> (avatar menu > Account > Security), then
+   `copy .env.example .env` and paste it in.
+
+Run an analysis:
+
+```
+docker compose --profile sonar run --rm sonar-scan
+```
+
+That single command starts `sonar-db` and `sonar` if they are not running, then boots a throwaway container
+built from `Dockerfile.ci`. The image carries the .NET SDK, so **no .NET installation is needed on the host** -
+only Docker. Inside it, the scanner brackets a Release build, runs the unit, integration and specs
+tests with coverage, uploads the result and waits for the quality gate. A failing gate makes the command exit
+non-zero. Results are at <http://localhost:9000/dashboard?id=product-management-system>.
+
+The coverage files land in `backend/TestResults` so they can be inspected locally (for example with Coverage
+Gutters). They are cleared at the start of every run; the analysis history itself lives in the server's
+volumes and is unaffected. To wipe that history too, use `docker compose --profile sonar down -v`.
+
+The image is pinned by digest and can be swapped with `SONAR_IMAGE`:
+
+```
+SONAR_IMAGE=sonarqube:26.10.0.133078-community docker compose --profile sonar up -d sonar
+```
+
+`dhi.io` requires `docker login dhi.io` (any free Docker ID), which is why CI overrides the variable with the
+public upstream image. To use the hardened image in CI as well, log in with a token saved as a secret before
+starting the stack.
+
+Coverage comes from Coverlet's Cobertura output. Migrations, `Program.cs` and the model snapshot are excluded.
+
+Things worth knowing:
+
+- The container mounts `/var/run/docker.sock` because the integration tests start their own Postgres container.
+  That is host-root access - acceptable for a local tool, not for a shared runner.
+- Rebuild after code changes: `docker compose --profile sonar run --rm --build sonar-scan`.
+- The image is pinned by digest. To bump it, pull the tag and re-pin:
+  `docker inspect --format "{{index .RepoDigests 0}}" dhi.io/sonarqube:26-debian-dev`
+- Community Build analyses a single branch and cannot comment on pull requests, so the gate is enforced by
+  the command's exit code. New code is defined by number of days, not by a reference branch.
 
 ## Decisions
 
